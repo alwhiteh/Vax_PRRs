@@ -1,0 +1,20 @@
+---
+title: "vax_prr_python"
+author: "Alex Whitehead"
+format: pdf
+editor: visual
+jupyter: python3
+---
+
+```{python}
+#| label: load python packages
+#| echo: false
+import numpy as np
+import pandas as pd
+import scanpy as sc
+```
+
+```{python}
+adata.write('my_results.h5ad', compression="gzip")
+!h5ls 'my_results.h5ad'
+```
