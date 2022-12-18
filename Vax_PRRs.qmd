@@ -1,0 +1,842 @@
+---
+title: "Vax_PRRs"
+author: "Alex Whitehead"
+format: pdf
+execute:
+  echo: false
+---
+
+```{r}
+#| label: load-packages
+#| echo: FALSE
+library(renv)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(Seurat)
+library(SeuratObject)
+library(R.utils)
+library(data.table)
+library(glmGamPoi) #makes SCTransform Faster
+library(pheatmap)
+library(reticulate)
+library(scater)
+library(SeuratDisk)
+#library(DoubletFinder)
+
+```
+
+## First we need to assemble the data into Seurat Objects, which we can then just load later. The following code chunks will generate the objects.
+
+```{r}
+#| label: download and read in data from Teichmann: Human Cell Atlas
+#| echo: FALSE
+# https://cells.ucsc.edu/?ds=teichmann-asthma+lung-atlas
+# Note, these cells are all from healthy donors
+# We will do this for epithelial and nonepithelial sets, then split by location
+# Then we will save the Seurat objects for easy loading
+mat <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/teich_epi_data.tsv.gz")
+meta <- read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/teich_epi_meta.tsv", header=T, sep="\t", as.is=T, row.names=1)
+genes = mat[,1][[1]]
+genes = gsub(".+[|]", "", genes)
+mat = data.frame(mat[,-1], row.names=genes)
+colnames(mat) <- gsub('[.]', '-', colnames(mat))
+# Mat has the problem where some of the columns start with an "X", and we need to remove those
+mat %>% select(starts_with("X")) -> broken
+mat %>% select(!starts_with("X")) -> acceptable
+colnames(broken) <- str_sub(colnames(broken),2)
+fixed <- cbind(broken,acceptable)
+teich_epi<- CreateSeuratObject(counts = fixed, project = "Teich_epi", meta.data=meta)
+saveRDS(teich_epi, "Teich_epi.RDS")
+
+# Repeat this process for the non-epithelial cell types
+mat <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/teich_non_epi_data.tsv.gz")
+meta <- read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/teich_non_epi_meta.tsv", header=T, sep="\t", as.is=T, row.names=1)
+genes = mat[,1][[1]]
+genes = gsub(".+[|]", "", genes)
+mat = data.frame(mat[,-1], row.names=genes)
+colnames(mat) <- gsub('[.]', '-', colnames(mat))
+# Mat has the problem where some of the columns start with an "X", and we need to remove those
+mat %>% select(starts_with("X")) -> broken
+mat %>% select(!starts_with("X")) -> acceptable
+colnames(broken) <- str_sub(colnames(broken),2)
+fixed <- cbind(broken,acceptable)
+teich_non_epi<- CreateSeuratObject(counts = fixed, project = "Teich_non_epi", meta.data=meta)
+saveRDS(teich_non_epi, "Teich_non_epi.RDS")
+
+teich.combined <- merge(teich_epi, y = teich_non_epi, add.cell.ids = c("epi", "non_epi"), project = "teich")
+teich.combined
+saveRDS(teich.combined, "Teich_combined.RDS")
+#obj.list <- SplitObject(teich.combined, split.by = "group")
+
+rm(meta,genes,mat, mat_names, broken, fixed, acceptable, data)
+```
+
+```{r}
+#| label: download the alternate Teichmann data and format 
+#| echo: FALSE
+# Start with alveoli
+mat <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/Alveoli_exprMatrix.tsv.gz")
+meta <- as.data.frame(read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/Alvioli_meta.tsv", header=T, sep="\t", as.is=T, row.names=1))
+genes = mat[,1][[1]]
+genes = gsub(".+[|]", "", genes)
+mat = data.frame(mat[,-1], row.names=genes)
+mat_names <- gsub('[.]', '-', colnames(mat))
+colnames(mat) <- str_sub(mat_names, end = -3)
+rownames(meta) <- str_sub(rownames(meta), end = -3)
+teich_alv <- CreateSeuratObject(counts = mat, project = "Teich_alv", meta.data=meta)
+saveRDS(teich_alv, "Teich_alv.RDS")
+
+# Next is bronchi
+mat <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/bronchi_exprMatrix.tsv.gz")
+meta <- as.data.frame(read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001002649/bronchi_meta.tsv", header=T, sep="\t", as.is=T, row.names=1))
+genes = mat[,1][[1]]
+genes = gsub(".+[|]", "", genes)
+mat = data.frame(mat[,-1], row.names=genes)
+mat_names <- gsub('[.]', '-', colnames(mat))
+colnames(mat) <- str_sub(mat_names, end = -3)
+rownames(meta) <- str_sub(rownames(meta), end = -3)
+# Mat has the problem where some of the columns start with an "X", and we need to remove those
+mat %>% select(starts_with("X")) -> broken
+mat %>% select(!starts_with("X")) -> acceptable
+colnames(broken) <- str_sub(colnames(broken),2)
+fixed <- cbind(broken,acceptable)
+teich_bronch <- CreateSeuratObject(counts = fixed, project = "Teich_bronch", meta.data=meta)
+saveRDS(teich_bronch, "Teich_bronch.RDS")
+
+# Last is nasal samples
+mat <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/NALT/Human/EGAS00001002649/nasal_exprMatrix.tsv.gz")
+meta <- as.data.frame(read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/NALT/Human/EGAS00001002649/nasal_meta.tsv", header=T, sep="\t", as.is=T, row.names=1))
+genes = mat[,1][[1]]
+genes = gsub(".+[|]", "", genes)
+mat = data.frame(mat[,-1], row.names=genes)
+mat_names <- gsub('[.]', '-', colnames(mat))
+colnames(mat) <- str_sub(mat_names, 2)
+teich_nasal <- CreateSeuratObject(counts = mat, project = "Teich_nasal", meta.data=meta)
+saveRDS(teich_nasal, "Teich_nasal.RDS")
+rm(genes, mat_names,mat,meta, fixed, broken, acceptable)
+
+teich_nasal <- readRDS("Teich_nasal.RDS")
+teich_nasal$author <- "Teichmann"
+saveRDS(teich_nasal, "h_nasal_teich.RDS")
+teich_bronch <- readRDS("Teich_bronch.RDS")
+teich_bronch$author <- "Teichmann"
+saveRDS(teich_bronch, "h_bronch_teich.RDS")
+teich_alv <- readRDS("Teich_alv.RDS")
+teich_alv$author <- "Teichmann"
+saveRDS(teich_alv, "h_alv_teich.RDS")
+```
+
+```{r}
+#| label: Generate the Human Adipose scRNA set Seurat from Rosen 
+#| echo: FALSE
+data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Human/GSE176171_Mixed_BMI")  
+# Note: the metadata file also contains the metadata for the mouse samples
+meta = as.data.frame(read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Human/GSE176171_Mixed_BMI/metadata.tsv.gz", header=T, sep="\t", as.is=T,quote = "", row.names=1))
+h_fat_rosen <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "h_fat_rosen", meta.data = meta)
+saveRDS(h_fat_rosen, "h_fat_rosen.RDS")
+
+# Generate the Rosen Mouse Adipose Seurat Object
+data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Mouse/GSE176171")  
+# Note: the metadata file also contains the metadata for the mouse samples
+meta = as.data.frame(read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Mouse/GSE176171/GSE176171_cell_metadata.tsv.gz", header=T, sep="\t", as.is=T,quote = "", row.names=1))
+m_fat_rosen <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_fat_rosen", meta.data = meta)
+saveRDS(m_fat_rosen, "m_fat_rosen.RDS")
+```
+
+```{r}
+#| label: Generate the Obese Human Adipose scRNA Seurat from Grundberg 
+#| echo: FALSE
+data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Human/GSE129363_Obsese_Indivs")  
+# Note: the metadata file also contains the metadata for the mouse samples
+meta = as.data.frame(read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Human/GSE129363_Obsese_Indivs/CellAnnotation.txt.gz", header=T, sep="\t", as.is=T,quote = "", row.names=1))
+h_fat_grund <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "h_fat_grund", meta.data = meta)
+saveRDS(h_fat_grund, "h_fat_grundberg.RDS")
+
+```
+
+```{r}
+#| label: Load the human blood samples from Krasnow
+#| echo: FALSE
+# Patient 1
+load("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Spleen:Blood/Human/EGAS00001004333/droplet_normal_lung_blood_seurat_ntiss10x.P1.anno.20191002.RC4.Robj")
+h_blood_kras_1 <- ntiss10x.P1.anno
+rm(ntiss10x.P1.anno)
+h_blood_kras_1 <- UpdateSeuratObject(h_blood_kras_1)
+saveRDS(h_blood_kras_1, "h_blood_kras1.RDS")
+# Patient 3
+load("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Spleen:Blood/Human/EGAS00001004333/droplet_normal_lung_blood_seurat_ntiss10x.P3.anno.20191002.RC4.Robj")
+h_blood_kras_3 <- ntiss10x.P3.anno
+rm(ntiss10x.P3.anno)
+h_blood_kras_3 <- UpdateSeuratObject(h_blood_kras_3)
+saveRDS(h_blood_kras_3, "h_blood_kras3.RDS")
+```
+
+```{r}
+#| label: Load the Lung  samples from Krasnow
+#| echo: FALSE
+# Load mouse sample
+load("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/EGAS00001004333/mouse_droplet_TMS_tiss10x.mouse.anno.ncbi.20200222.RC4.Robj")
+m_lung_kras <- tiss10x.mouse.anno
+m_lung_kras <- UpdateSeuratObject(m_lung_kras)
+rm(tiss10x.mouse.anno)
+m_lung_kras$author <- "krasnow"
+m_lung_kras$organism <- "human"
+saveRDS(m_lung_kras, "m_lung_kras.RDS")
+# Load human sample
+load("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001004333/droplet_normal_lung_seurat_ntiss10x.P2.anno.20191002.RC4.Robj")
+h_lung_kras <- ntiss10x.P2.anno
+rm(ntiss10x.P2.anno)
+h_lung_kras <- UpdateSeuratObject(h_lung_kras)
+saveRDS(h_lung_kras, "h_lung_kras.RDS")
+h_lung_kras <- readRDS("h_lung_kras.RDS")
+h_lung_kras$author <- "krasnow"
+h_lung_kras$organism <- "human"
+saveRDS(h_lung_kras, "h_lung_kras.RDS")
+```
+
+```{r}
+#| label: Load the murine Lung samples from Lukas/Angelidis
+#| echo: FALSE
+load("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE124872/GSE124872_raw_counts_single_cell.RData")
+meta <- read.table("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE124872/GSE124872_Angelidis_2018_metadata.csv", header=T, sep=",", as.is=T,quote = "", row.names=1)
+# The metadata rownames and counts colnames are mismatched
+rownames(meta) <- raw_counts@Dimnames[[2]]
+m_lung_angel <-CreateSeuratObject(raw_counts, min.cells = 3, min.features = 200, project = "m_lung_angelidis", meta.data = meta)
+rm(raw_counts,meta)
+m_lung_angel$author <- "Angelidis"
+saveRDS(m_lung_angel, "m_lung_angelidis.RDS")
+```
+
+```{r}
+#| label: Load the human Lung samples from Tata
+#| echo: FALSE
+h_lung_endo_tata <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE178360/GSE178360_endo.sub_SAE10x3.integrated_temp_v2.RDS")
+h_lung_epi_tat <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE178360/GSE178360_epi.sub_SAE10x3.integrated_v2.RDS")
+h_lung_immune_tata <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE178360/GSE178360_immune_platelet.sub_SAE10x3.integrated_temp.RDS")
+h_lung_mes_tat <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE178360/GSE178360_mes.sub_SAE10x3.integrated_v2.RDS")
+saveRDS(h_lung_endo_tata, "h_lung_endo_tata.RDS")
+saveRDS(h_lung_epi_tat, "h_lung_epi_tat.RDS")
+saveRDS(h_lung_immune_tata, "h_lung_immune_tata.RDS")
+saveRDS(h_lung_mes_tat, "h_lung_mes_tat.RDS")
+h_lung_endo_tata <- readRDS("h_lung_endo_tata.RDS")
+h_lung_epi_tat <- readRDS("h_lung_epi_tat.RDS")
+h_lung_immune_tata <- readRDS("h_lung_immune_tata.RDS")
+h_lung_mes_tat <- readRDS("h_lung_mes_tat.RDS")
+h_lung_endo_tata$author <- "Tata"
+h_lung_epi_tat$author <- "Tata"
+h_lung_immune_tata$author <- "Tata"
+h_lung_mes_tat$author <- "Tata"
+saveRDS(h_lung_endo_tata, "h_lung_endo_tata.RDS")
+saveRDS(h_lung_epi_tat, "h_lung_epi_tat.RDS")
+saveRDS(h_lung_immune_tata, "h_lung_immune_tata.RDS")
+saveRDS(h_lung_mes_tat, "h_lung_mes_tat.RDS")
+```
+
+```{r}
+#| label: Load the human Lung samples from Habermann
+#| echo: FALSE
+h_lung_haber <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE135893/GSE135893_ILD_annotated_fullsize.RDS")
+h_lung_haber <- UpdateSeuratObject(h_lung_haber)
+h_lung_haber$author <- "Habermann"
+# This data includes lots of samples with diseased tissue, we will subset only the healthy controls - will do this on CHTC because requires too much RAM
+#h_lung_haber$celltype <- Idents(h_lung_haber)
+#Idents(h_lung_haber) <- "Diagnosis"
+#health_haber_cells <- WhichCells(h_lung_haber, idents = "Control")
+#test <- subset(h_lung_haber, cells =  health_haber_cells)
+saveRDS(h_lung_haber, "h_lung_haber.RDS")
+```
+
+```{r}
+#| label: Load the human Lung samples from Stripp
+#| echo: FALSE
+h_lung_strip <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE160664/GSE160664.rds") 
+saveRDS(h_lung_strip, "h_lung_strip.RDS")
+h_lung_strip <- readRDS("h_lung_strip.RDS")
+h_lung_strip$author <- "Stripp"
+saveRDS(h_lung_strip, "h_lung_strip.RDS")
+```
+
+```{r}
+#| label: Load the human Lung samples from Okuda
+#| echo: FALSE
+h_lung_okuda <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/GSE160673/GSE160673_Ken_7scRNAseq_mt20_merged16labeled_seurat.RDS") 
+h_lung_okuda <- UpdateSeuratObject(h_lung_okuda)
+#saveRDS(h_lung_okuda, "h_lung_okuda.RDS")
+#h_lung_okuda <- readRDS("h_lung_okuda.RDS")
+h_lung_okuda$author <- "Okuda"
+saveRDS(h_lung_okuda, "h_lung_okuda.RDS")
+```
+
+```{r}
+#| label: Load the mouse Lung samples from Raredon
+#| echo: FALSE
+# Start with the female mouse
+counts <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/female_mouse/matrix.mtx.gz")
+barcodes <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/female_mouse/original/barcodes.tsv.gz")
+genes <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/female_mouse/original/features.tsv.gz")
+# here we find that the barcodes.tsv.gz  and genes.tsv files have headers that we need to remove
+df1 <-  as.data.frame(barcodes[2:nrow(barcodes),])
+write.table(df1, file = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/female_mouse/barcodes.tsv", row.names=FALSE, col.names = F, sep="\t")
+# gzip this in terminal 
+df2 <-  as.data.frame(genes[2:nrow(genes),])
+write.table(df2, file = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/female_mouse/features.tsv", row.names=FALSE, col.names = F, sep="\t")
+# gzip this in terminal 
+m_lung_rare_f <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/female_mouse")
+m_lung_rare_f <-CreateSeuratObject(m_lung_rare_f, min.cells = 3, min.features = 200, project = "m_lung_rare_f")
+m_lung_rare_f$author <- "Raredon"
+saveRDS(m_lung_rare_f, "m_lung_rare_f.RDS")
+
+
+# Now do the male mouse
+counts <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/male_mouse/matrix.mtx.gz")
+barcodes <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/male_mouse/original/barcodes.tsv.gz")
+genes <- fread("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/male_mouse/original/features.tsv.gz")
+# here we find that the barcodes.tsv.gz  and genes.tsv files have headers that we need to remove
+df1 <-  as.data.frame(barcodes[2:nrow(barcodes),])
+write.table(df1, file = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/male_mouse/barcodes.tsv", row.names=FALSE, col.names = F, sep="\t")
+# gzip this in terminal 
+df2 <-  as.data.frame(genes[2:nrow(genes),])
+write.table(df2, file = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/male_mouse/features.tsv", row.names=FALSE, col.names = F, sep="\t")
+# gzip this in terminal
+m_lung_rare_m <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE133747/male_mouse")
+m_lung_rare_m <-CreateSeuratObject(m_lung_rare_m, min.cells = 3, min.features = 200, project = "m_lung_rare_m")
+m_lung_rare_m$author <- "Raredon"
+saveRDS(m_lung_rare_m, "m_lung_rare_m.RDS")
+
+```
+
+```{r}
+#| label: Load the mouse Lung samples from Sampath
+#| echo: FALSE
+data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE164621_RAW/mouse2")
+m_lung_sam2 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_sam2")
+m_lung_sam2$author <- "Sampath"
+saveRDS(m_lung_sam2, "m_lung_sam2.RDS")
+
+data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE164621_RAW/mouse3")
+m_lung_sam3 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_sam3")
+m_lung_sam3$author <- "Sampath"
+saveRDS(m_lung_sam3, "m_lung_sam3.RDS")
+
+data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Mouse/GSE164621_RAW/mouse4")
+m_lung_sam4 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_sam4")
+m_lung_sam4$author <- "Sampath"
+saveRDS(m_lung_sam4, "m_lung_sam4.RDS")
+rm(m_lung_sam2, m_lung_sam3,m_lung_sam4)
+```
+
+```{r}
+#| label: Load the mouse Lung samples from Koenitzer
+#| echo: FALSE
+data <- Read10X("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/GSE145998/Koenitzer1/filtered_feature_bc_matrix")
+m_lung_koenitzer1 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_koenitzer1")
+m_lung_koenitzer1$author <- "koenitzer"
+saveRDS(m_lung_koenitzer1, "m_lung_koenitzer1.RDS")
+
+data <- Read10X("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/GSE145998/Koenitzer2/filtered_feature_bc_matrix")
+m_lung_koenitzer2 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_koenitzer2")
+m_lung_koenitzer2$author <- "koenitzer"
+saveRDS(m_lung_koenitzer2, "m_lung_koenitzer2.RDS")
+
+data <- Read10X("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/GSE145998/Koenitzer3/filtered_feature_bc_matrix")
+m_lung_koenitzer3 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_koenitzer3")
+m_lung_koenitzer3$author <- "koenitzer"
+saveRDS(m_lung_koenitzer3, "m_lung_koenitzer3.RDS")
+rm(m_lung_koenitzer1, m_lung_koenitzer2,m_lung_koenitzer3,data)
+
+```
+
+### Lets look at all the samples we have generated
+
+```{r}
+#| label: Load the Seurat objects, last 4 of GEO/EGA ID in comment
+#| echo: FALSE
+# Read in the lung samples, 6 human, 2 mouse
+h_bronch_teich <- readRDS("Teich_bronch.RDS") #E2649
+h_alv_teich <- readRDS("Teich_alv.RDS") #E2649
+h_lung_kras <- readRDS("h_lung_kras.RDS") #E4344
+h_lung_strip <- readRDS("h_lung_strip.RDS") #0664
+h_lung_haber <- readRDS("h_lung_haber.RDS") #5893
+h_lung_okuda <- readRDS("h_lung_okuda.RDS") #0673
+h_lung_endo_tata <- readRDS("h_lung_endo_tata.RDS") #8360
+h_lung_epi_tat <- readRDS("h_lung_epi_tat.RDS") #8360
+h_lung_immune_tata <- readRDS("h_lung_immune_tata.RDS") #8360
+h_lung_mes_tat <- readRDS("h_lung_mes_tat.RDS") #8360
+m_lung_agilidis <- readRDS("m_lung_anglidis.RDS") #4872
+m_lung_kras <- readRDS("m_lung_kras.RDS") #E4344
+m_lung_rare_m <- readRDS("m_lung_rare_m.RDS") #3747
+m_lung_rare_f <- readRDS("m_lung_rare_f.RDS") #3747
+m_lung_sam2 <- readRDS("m_lung_sam2.RDS") #4621
+m_lung_sam3 <- readRDS("m_lung_sam3.RDS") #4621
+m_lung_sam4 <- readRDS("m_lung_sam4.RDS") #4621
+# Read in the nasal samples
+h_nasal_teich <- readRDS("Teich_nasal.RDS") #E2649
+
+# Read in the adispose samples
+h_fat_rosen <- readRDS("h_fat_rosen.RDS") #6171
+m_fat_rosen <- readRDS("m_fat_rosen.RDS") #6171
+h_fat_grund <- readRDS("h_fat_grundberg.RDS") #6171
+# Read in the blood/spleen samples
+h_blood_kras_1 <- readRDS("h_blood_kras1.RDS") #E4344
+h_blood_kras_3 <- readRDS("h_blood_kras3.RDS") #E4344
+
+```
+
+## Assign cell types to each cluster
+
+```{r}
+mlung.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mlung_markers.csv")
+
+mlung.combined <- readRDS("m_lung_combined.RDS")
+
+# Here are what the clusters are:
+# Cluster 0 = Myl6, Acta2 -  SMC
+# Cluster 1 = lyve1, cd36 -  Lymphatic endothelial cells
+# Cluster 2 = Lyz2, Ly6c2, Ms4a6c, Ccr2 -Monocytes/DC/Mac
+# Cluster 3 = Il7r, Id2, Nkg7, Cd3g, Cd3b, Thy1 - T Cells + NK Cells
+# Cluster 4 = Sftpc, Sftpa - Alv Type 2
+# Cluster 5 = Gsn, Ogn, Col3a1, Col1a2 - Stromal
+# Cluster 6 = Lyz2, Cd44, Mrc1, Ctss, Ctsd - Alveolar Macrophages
+# Cluster 7 = Top2a, Hmgb2, Ki67 - Dividing Cells
+# Cluster 8 = Cd74, H2, Ms4a1 - B Cells + Plasma Cells
+# Cluster 9 = Actb, Il4i1 - Inflammatory SMCs?
+# Cluster 10 = Spp1, Postn, Col4a1, Sparc - Stromal
+# Cluster 11 = Il1b, Csf3r, jun/fos - Neutrophils/Eosinophils
+# Cluster 12 = Ager,Sparc, Vegfa, Krt7 - Alveolar Type 1 
+# Cluster 13 = Foxj1 - Cilliated Cells
+# Cluster 14 = Ly6a, Ly6c1, Cd36, S1pr - Endothelial Cells
+# Cluster 15 = Scgb3a2, Prdx6 - Club Cells/Secretory Cells
+# Cluster 16 = Apoe, C1qb, C1qc, Cd74, H2 - Trem2 Macrophage/DC
+# Cluster 17 = H2, CD74, - DCs
+# Cluster 18 = Cdk14, Xist, Elmo1 - Dividing Cells
+# Cluster 19 = Acta2, Tagln - Smooth Muscle Cells
+# Cluster 20 = C3, C4, Dcn - Mesothelial Cells
+
+mlung.combined <- RenameIdents(mlung.combined, 
+                         `0` = "SMC_1", 
+                         `1` = "Lymphatic_Endothelial_Cells", 
+                         `2` = "Monocytes/DC/Mac",
+                         `3` = "T_and_NK_Cells", 
+                         `4` = "Alv_Type_2",
+                         `5` = "Stromal", 
+                         `6` = "Alveolar_Macrophages",
+                         `7` = "Dividing_Cells_1",
+                         `8` = "B_and_Plasma_Cells", 
+                         `9` = "SMC_2", 
+                         `10`= "Stromal_2",
+                         `11`= "Neutrophils/Eosinophils",
+                         `12`= "Alv_Type_1",
+                         `13`= "Cilliated_Cells", 
+                         `14`= "Endothelial_Cells",
+                         `15`= "Club/Secretory_Cells",
+                         `16`= "Trem2_Macrophage/DCs",
+                         `17`= "DCs", 
+                         `18`= "Dividing_Cells_2",
+                         `19`= "SMC_3",
+                         `20`= "Mesothelial_Cells")
+
+mlung.combined$CellTypes <- Idents(mlung.combined)
+table(Idents(mlung.combined))
+
+DimPlot(mlung.combined, label = T)
+# Compare with original author annotations
+# Idents(mlung.combined) <- "celltype"
+# DimPlot(mlung.combined, label = T)
+# Idents(mlung.combined) <- "free_annotation"
+# DimPlot(mlung.combined, label = T)
+# Idents(mlung.combined) <- "CellTypes"
+# Idents(mlung.combined) <- "seurat_clusters"
+
+# Set the rna values to normalized 
+DefaultAssay(mlung.combined) <- "SCT"
+
+# Remove the dividing cell clusters
+mlung.combined <- subset(mlung.combined, idents = c("Dividing_Cells_2","Dividing_Cells_1"), invert = TRUE)
+
+# Save the filtered data
+saveRDS(mlung.combined, "mlung.combined.filtered.RDS")
+```
+
+Repeat this process for the human samples
+
+```{r}
+hlung.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/hlung_markers.csv")
+
+hlung.combined <- readRDS("h_lung_combined.RDS") #150k cells over 6 datasets
+
+DefaultAssay(hlung.combined) <- "SCT"
+#hlung.combined <- PrepSCTFindMarkers(hlung.combined)
+#hlung.markers <- FindAllMarkers(hlung.combined)
+
+#~~~~~~~~ Might NEED to remove Stripp Samples - only dataset with  clust 9 + 11 +13
+
+
+# Here are what the clusters are:
+# Cluster 0 = CD74 and HLA-DR, Apoe - Alveolar Macs
+# Cluster 1 = MT RNAs, TUBB, CALM1 - Okuda Undefined
+# Cluster 2 = Keratins 15,17,19, CD9 - Basal Cells 
+# Cluster 3 = SFTPC/A/B - Type 2 alveolar
+# Cluster 4 = MALAT1, Mhc2, CTSS, CD74 - Mono/Mac
+# Cluster 5 = Fcn3, Cldn5, Mt2A, HLA-e, HLA-c, SPARC - Endothelial (krasnow)
+# Cluster 6 = CAPS, Tppp3 - Cilliated (okuda)
+# Cluster 7 = SCGB1/3, SAA1, Muc5AC - Secretory p
+# Cluster 8 = IL7r, CXCR4, NKG7, CD3e - CD4 T and NK cells
+# Cluster 9 = Sftpa/b - Type 2 alveolar? - specific to stripp
+# Cluster 10 = Jun/ATF3, Cldn4, Sox4  - 
+# Cluster 11 = Sftpc, Sftpa  - More secretory cells? - specific to stripp
+# Cluster 12 = Scgb3a2, Timp3, Sparcl1 - secretory?
+# Cluster 13 = - specific to teichmann - Nasal Epithelial Cells?
+# Cluster 14 = Gzmb, Nkg7, Cd7 - CD8 T cells
+# Cluster 15 = Cldn5, HLA-E - Endothelial cells
+# Cluster 16 = Krt19, Fos - Basal Cells
+# Cluster 17 = AGER, Cav1, Krt7, Cd55 - Type 1 alveolar (habermann)
+# Cluster 18 = MT, RPL, CAP - cilliated?
+# Cluster 19 = JCHAIN, CD79 - B Cells
+# Cluster 20 = TAGLN, ACTA2 - SMCs
+# CLuster 21 = Tryptases, CPA3 - Mast Cells
+# Cluster 22 = Top2a, histones, hmgb - Dividing Cells
+# Cluster 23 = Col1, Col3, DCN - Fibroblasts
+# Cluster 24 = Lyz - Granluocytes? But CD45 Negative?
+# Cluster 25 = CCL21, LYVE1 - Lymphatic Endothelial Cells
+
+hlung.combined <- RenameIdents(hlung.combined, 
+                         `0` = "SMC_1", 
+                         `1` = "Lymphatic_Endothelial_Cells", 
+                         `2` = "Monocytes/DC/Mac",
+                         `3` = "T_and_NK_Cells", 
+                         `4` = "Alv_Type_2",
+                         `5` = "Stromal", 
+                         `6` = "Alveolar_Macrophages",
+                         `7` = "Dividing_Cells_1",
+                         `8` = "B_and_Plasma_Cells", 
+                         `9` = "SMC_2", 
+                         `10`= "Stromal_2",
+                         `11`= "Neutrophils/Eosinophils",
+                         `12`= "Alv_Type_1",
+                         `13`= "Cilliated_Cells", 
+                         `14`= "Endothelial_Cells",
+                         `15`= "Club/Secretory_Cells",
+                         `16`= "Trem2_Macrophage/DCs",
+                         `17`= "DCs", 
+                         `18`= "Dividing_Cells_2",
+                         `19`= "SMC_3",
+                         `20`= "Mesothelial_Cells")
+
+hlung.combined$CellTypes <- Idents(hlung.combined)
+table(Idents(hlung.combined))
+
+DimPlot(hlung.combined, label = T)
+# Compare with original author annotations
+# Idents(mlung.combined) <- "celltype"
+# DimPlot(mlung.combined, label = T)
+# Idents(mlung.combined) <- "free_annotation"
+# DimPlot(mlung.combined, label = T)
+# Idents(mlung.combined) <- "CellTypes"
+# Idents(mlung.combined) <- "seurat_clusters"
+
+# Set the rna values to normalized 
+DefaultAssay(hlung.combined) <- "SCT"
+
+# Remove the dividing cell clusters
+#hlung.combined <- subset(hlung.combined, idents = c("Dividing_Cells_2","Dividing_Cells_1"), invert = TRUE)
+
+# See each dataset's contribution to each cluster
+composition <- as.matrix(table(hlung.combined@active.ident, hlung.combined@meta.data$author))
+pct_composition <- composition/rowSums(composition)
+pct_composition <- as.data.frame(pct_composition)
+hogs <- pct_composition %>% filter(Freq > 0.7)
+
+# Why is there a cluster that is mainly made up of cells from Teichmann?
+interesting <- WhichCells(hlung.combined, idents = '13')
+thirteen <- subset(hlung.combined, cells = interesting)
+tiech_clust <- as.matrix(table(thirteen@meta.data$Sample, thirteen@active.ident))
+# These are the nasal samples
+tiech_clust <- as.matrix(table(hlung.combined@meta.data$Sample == '4951STDY7472266', hlung.combined@active.ident))
+
+tiech_clust <- as.matrix(table(hlung.combined@meta.data$Sample == '4951STDY7487593', hlung.combined@active.ident))
+
+FeaturePlot(object = hlung.combined, features = 'percent.mt', label = T)
+DefaultAssay(hlung.combined) <- "SCT"
+VlnPlot(object = hlung.combined, features = 'percent.mt')
+DefaultAssay(mlung.combined) <- "SCT"
+VlnPlot(object = mlung.combined, features = 'percent.mt')
+
+# Save the filtered data
+saveRDS(hlung.combined, "mlung.combined.filtered.RDS")
+```
+
+# Let's compare rPCA with and without stripp, and then CCA
+
+```{r}
+# First we will look at the rPCA with stripp
+h_rpca.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_rpca/hlung.combined.markers.csv")
+h_rpca <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_rpca/h_lung_combined.RDS")
+DefaultAssay(h_rpca) <- "SCT"
+DimPlot(h_rpca, label = T)
+
+# Then we will look at the rPCA without stripp
+h_rpca_ns.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_nostrip_rpca/hlung.combined.markers.csv")
+h_rpca_ns <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_nostrip_rpca/h_lung_combined.RDS")
+DefaultAssay(h_rpca_ns) <- "SCT"
+DimPlot(h_rpca_ns, label = T)
+
+# Lastly we will loook at the CCA (with stripp)
+h_cca.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_cca/hlung.combined.markers.csv")
+h_cca <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_cca/h_lung_combined.RDS")
+DefaultAssay(h_cca) <- "SCT"
+DimPlot(h_cca, label = T)
+```
+
+#Remove Doublets using DoubletFinder
+
+```{r}
+#| label: Load the Seurat objects, last 4 of GEO/EGA ID in comment
+#| echo: FALSE
+## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
+sweep.res.list_mlung <- paramSweep_v3(mlung.combined, PCs = 1:30, sct = TRUE, num.cores = 6)
+sweep.stats_mlung <- summarizeSweep(sweep.res.list_mlung, GT = FALSE)
+bcmvn_mlung <- find.pK(sweep.stats_mlung)
+
+
+## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
+homotypic.prop <- modelHomotypic(mlung.combined@meta.data$CellTypes)  ## ex: annotations <- seu_kidney@meta.data$ClusteringResults
+nExp_poi <- round(homotypic.prop*nrow(mlung.combined@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+## Run DoubletFinder with varying classification stringencies ----------------------------------------------------------------
+test <- doubletFinder_v3(mlung.combined, PCs = 1:30, pN = 0.25, pK = 0.3, nExp = nExp_poi, reuse.pANN = FALSE, sct = TRUE)
+
+```
+
+## Now we can look at different PRRs across tissues and organisms
+
+```{r, include = FALSE}
+#! Generate dotplots for PRRs of each cluster
+all_genes <- as.data.frame(rownames(mlung.combined))
+# Note that assay should be set to "SCT"
+TLRs <- c("Tlr1","Tlr2","Tlr3","Tlr4","Tlr5","Tlr6","Tlr7","Tlr8","Tlr9", #"Tlr10",
+             "Tlr11","Tlr12","Tlr13")
+CLRs <- c("Ly75",    # DEC205/CLEC13b/CD205
+             "Clec7a",  # Dectin1
+             "Clec4n",  # Dectin2/CLEC6A
+             "Clec4e",  # Mincle
+             "Clec9a",  # DNGR1
+             "Cd209a",   # DC-SIGN
+             "Cd209b",
+             "Cd209c",
+             "Cd209d",
+             "Mrc1",    # MR
+             "Clec5a",  # MDL-1
+             "Clec4d",  # CLEC4D/MCL/Dectin3
+             "Clec4a1", #DCIR/CLEC4A
+             "Clec4a2",
+             "Clec4a3",
+             "Cd207",   # Langerin
+             "Clec10a") # MGL)
+Clecs <- all_genes[grepl("Clec", all_genes$`rownames(mlung.combined)`),] #get all CLEC Genes
+Nods <- c("Nod1",
+          "Nod2",
+          "Nlrc3", # Nod3
+          "Nlrc5", # Nod4
+          "Nlrx1", # Nod5
+          "Ciita")
+NLRPs <- c("Nlrp1",
+          "Nlrp2",
+          "Nlrp3", 
+          "Nlrp4", 
+          "Nlrp5", 
+          "Nlrp6",
+          "Nlrp7",
+          "Nlrp8",
+          "Nlrp9",
+          "Nlrp10",
+          "Nlrp11",
+          "Nlrp12",
+          "Nlrp13",
+          "Nlrp14")
+IPAFs <- c("Nlrc4",
+           "Naip1",
+           "Naip2",
+           "Naip3",
+           #"Naip4",
+           "Naip5",
+           "Naip6",
+           "Naip7")
+RLRs <- c("Ddx58", # RLR-3/LGP2
+          "Ifih1") # MDA5
+# More PRRs and sensors from: https://doi.org/10.3389/fimmu.2018.02379
+Orphans <- c("Fpr1",# senses formylmethionine on pathogens
+            "Il1rl1",# ST2, senses IL-33 alarmin
+            "Il6ra",# senses IL6
+            "Il6st",# senses Il6
+            "Ager",# RAGE receptor
+            "Il1r1",# senses Il1b
+            "Bsg",# CD147, senses TB, maybe SARS-Cov2?
+            "P2ry2",# senses ATP
+            "Gpr132",# senses linoleic acid, maybe lysophosphatidyl choline?
+            "P2rx7") # purinergic receptor
+PRRs <- c(TLRs, CLRs, Clecs, Nods, IPAFs, RLRs, Orphans)
+PRRs <- PRRs[!duplicated(PRRs)] # remove any extra CLRs
+
+ggsave("M_lung_PRRs.pdf",
+  plot = DotPlot(mlung.combined, features = PRRs),
+  width = 50,
+  height = 10,
+  device = "pdf",
+  limitsize = F)
+
+ggsave("M_lung_dimplot.pdf",
+  plot = DimPlot(mlung.combined, label = T),
+  width = 20,
+  height = 20,
+  device = "pdf",
+  limitsize = F)
+
+ggsave("M_lung_ridgeplot.pdf",
+  plot =RidgePlot(mlung.combined, features = PRRs),
+  width = 50,
+  height = 100,
+  device = "pdf",
+  limitsize = F)
+```
+
+While rPCA is reccomended for large datasets and a conservative integration, we need to evaluate Harmony (not very good: https://www.biorxiv.org/content/10.1101/2022.09.27.509674v1.full.pdf) , CCA (probably better), and MultiMAP (python) for integrating across species.
+
+```{r}
+library(biomaRt)
+library(dplyr)
+library(purrr)
+library(anndata)
+library(tidyverse)
+
+# Set the biomaRt version we will be using, here we will use 108
+species1 = "hsapiens" # this is the species we want to map everything to
+mart <- useEnsembl("ensembl", version = "108", dataset = "hsapiens_gene_ensembl")
+# get genes in the main chrs of the first species
+genes_species_1 <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name"), mart = mart) %>%
+  dplyr::filter(chromosome_name %in% (genes_main_chr[species_1] %>% purrr::flatten_chr()))
+
+genes_species_1 <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name"), mart = mart)
+
+# Find the Ensembl attributes related to mouse "homo"logues of human genes
+avail_attributes <- listAttributes(mart) %>% 
+  dplyr::filter(grepl("mmusc", name)) %>% 
+  dplyr::filter(grepl("homo", name)) %>%
+  dplyr::filter(!grepl("Query protein or transcript ID", description))
+
+# Generate the homology table
+# This maps mouse to human genes
+homology_tbl <- getBM(attributes = c("ensembl_gene_id", 
+                                    "external_gene_name", 
+                                    "chromosome_name", 
+                                    "start_position", 
+                                    "end_position", 
+                                    avail_attributes$name), 
+                     mart = mart, filters = "ensembl_gene_id",
+                     values = genes_species_1[["ensembl_gene_id"]])
+
+write.csv(homology_tbl, file = "homology_tbl.csv")
+
+species_1 = "mmusculus" #select the species we want the human orthologue of
+one2one = homology_tbl %>% 
+  filter_at(vars(ends_with("homolog_orthology_type")), all_vars(. == 'ortholog_one2one')) %>%
+  distinct(get(paste0(species_1, "_homolog_ensembl_gene")), `.keep_all` = TRUE)
+print(dim(one2one))
+
+# Build a many to many mapping object
+many2many = homology_tbl %>% filter_at(vars(ends_with("homolog_orthology_type")), 
+                                       all_vars(. != 'ortholog_one2one'))
+many2many = many2many %>% filter(!is.na(get(paste0(species_1, "_homolog_ensembl_gene"))) & get(paste0(species_1, "_homolog_ensembl_gene")) != "")
+print(dim(many2many))
+many2many_copy <- many2many %>% rowid_to_column("index")
+
+while (nrow(many2many_copy) > 0) {
+
+    dd <- many2many_copy %>%
+        filter(get(paste0(species_1, "_homolog_ensembl_gene"))  == levels(factor(many2many_copy[[paste0(species_1, "_homolog_ensembl_gene")]]))[1])
+
+    genes_now = dd %>% dplyr::select(ends_with("_homolog_ensembl_gene")) %>% flatten() %>% unique() %>% as.character()
+
+    gene_group <- many2many_copy %>%
+        dplyr::filter_at(vars(ends_with("_homolog_ensembl_gene")), any_vars(. %in% genes_now))
+
+    many2many_copy <- many2many_copy %>%
+    filter(!index %in% gene_group$index)
+
+    adatas_many2many[[species_now]] = adatas[[species_now]][, tolower(adatas[[species_now]]$var_names) %in% tolower(gene_group[[paste0(species_now, "_homolog_ensembl_gene")]])]
+            keep_row = adatas_many2many[[species_now]]$var %>%
+            arrange(desc(mean_counts)) %>%
+            slice(1)
+            adatas_many2many[[species_now]] = adatas_many2many[[species_now]][, which(tolower(adatas_many2many[[species_now]]$var_names) == tolower(rownames(keep_row)))]
+
+# Now we need to take the mapping and apply it to an Anndata object 
+m_lung_sam2_ad <- 
+```
+
+Let's try running the R script from https://github.com/Functional-Genomics/CrossSpeciesIntegration/blob/main/bin/concat_by_homology_multiple_species_by_gene_id.R
+
+`{# {r} # source("concat_by_homology_multiple_species_by_gene_id.R") #  # arg1 <-  # arg2 <- 2 # system(paste("concat_by_homology_multiple_species_by_gene_id.R", m_lung_kras, arg2))`
+
+```{r}
+#| label: Try a test case with one human and one mouse lung dataset
+#| echo: false
+# Krasnow mouse lung single cell
+m_lung_kras # 24618 cells
+m_lung_kras$organism <- "mouse"
+# Krasnow human lung single cell
+h_lung_kras # 28793 Cells
+h_lung_kras$organism <- "human"
+
+# First we need to figure out how to tranfer the annotations from one species to the other:
+
+
+
+# Let's try Harmony integration - this didn't work because we don't have a common gene space
+library(harmony)
+kras <- merge(m_lung_kras, y = h_lung_kras, add.cell.ids = c("m_lung", "h_lung"), project = "merged_lung") %>%
+    Seurat::NormalizeData(verbose = FALSE) %>%
+    FindVariableFeatures(selection.method = "vst", nfeatures = 2000) %>% 
+    ScaleData(verbose = FALSE) %>% 
+    RunPCA(pc.genes = kras@var.genes, npcs = 20, verbose = FALSE)
+DimPlot(kras, group.by = "organism")
+kras <- RunHarmony(kras, group.by.vars = "organism")
+ElbowPlot(kras, ndims = 20, reduction = "pca")
+kras <- RunUMAP(kras, reduction = "harmony", dims = 1:10)
+kras <- RunPCA(kras, reduction = "harmony", dims = 1:10)
+kras <- FindNeighbors(kras, reduction = "harmony", dims = 1:10) %>% FindClusters()
+DimPlot(kras, group.by = c("organism", "ident", "CellType"), ncol = 3)
+
+```
+
+## We will try to make a test case for python integration of objects using scanpy and multimap
+
+First we need to convert some of our Seurat objects into AnnData objects
+
+```{r}
+#| label: Convert some seurat objects into anndata for via h5Seurat
+#| echo: false
+
+# Note to self: try sceasy for converstion b/w Seurat and Anndata
+SaveH5Seurat(m_lung_sam2, filename = "m_lung_sam2.h5Seurat", overwrite = T)
+Convert("m_lung_sam2.h5Seurat", dest = "h5ad")
+
+SaveH5Seurat(m_lung_sam3, filename = "m_lung_sam3.h5Seurat")
+Convert("m_lung_sam3.h5Seurat", dest = "h5ad")
+
+# We will perform this for the Krasnow Mouse object
+# First it needs to be updated and UMAP and PCA need to be rerun
+m_lung_kras <- UpdateSeuratObject(m_lung_kras)
+m_lung_kras <- RunPCA(m_lung_kras)
+m_lung_kras <- RunUMAP(m_lung_kras, dims = 1:30)
+SaveH5Seurat(m_lung_kras, filename = "m_lung_kras.h5Seurat", overwrite = T)
+SeuratDisk::Convert("m_lung_kras.h5Seurat", dest = "h5ad")
+
+
+# Let's try with m_lung_combined
+
+```
+
+Quarto (even running with the Jupyter editor doesn't seem to be able to import scanpy, so instead we will write a separate python script in pycharm to execute the read in, merging, and saving code
+
+\<insert the .py code here\>
