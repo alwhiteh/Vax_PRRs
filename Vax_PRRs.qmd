@@ -22,11 +22,185 @@ library(pheatmap)
 library(reticulate)
 library(scater)
 library(SeuratDisk)
+library(limma)
+library(biomaRt)
+library(dplyr)
+library(purrr)
+library(anndata)
+library(tidyverse)
+
 #library(DoubletFinder)
 
 ```
 
-## First we need to assemble the data into Seurat Objects, which we can then just load later. The following code chunks will generate the objects.
+# We need to map the mouse genes to human orthologs in order to be able to combine the datasets. This requires changing the feature names prior to generating the Seurat Object. We will then generate mouse, human, and mouse as human objects. 
+
+```{r}
+#| label: Replace murine genes with human orthologs
+#| echo: FALSE
+
+# Generate the mouse to human mapping dataframe
+# Set the biomaRt version we will be using, here we will use 108
+species1 = "hsapiens" # this is the species we want to map everything to
+mart <- useEnsembl("ensembl", version = "108", dataset = "hsapiens_gene_ensembl")
+
+# get genes in the main chrs of the first species
+genes_species_1 <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name"), mart = mart)
+
+# Find the Ensembl attributes related to mouse "homo"logues of human genes
+avail_attributes <- listAttributes(mart) %>% 
+  dplyr::filter(grepl("mmusc", name)) %>% 
+  dplyr::filter(grepl("homo", name)) %>%
+  dplyr::filter(!grepl("Query protein or transcript ID", description))
+
+# Generate the homology table
+# This maps mouse to human genes
+homology_tbl <- getBM(attributes = c("ensembl_gene_id", 
+                                    "external_gene_name", 
+                                    "chromosome_name", 
+                                    "start_position", 
+                                    "end_position", 
+                                    avail_attributes$name), 
+                     mart = mart, filters = "ensembl_gene_id",
+                     values = genes_species_1[["ensembl_gene_id"]])
+#write.csv(homology_tbl, file = "human_mouse_homology_tbl.csv")
+
+#Filter to get all the one-to-one mapping homologues
+species_1 = "mmusculus" #select the species we want the human ortholog of
+one2one = homology_tbl %>% 
+  filter_at(vars(ends_with("homolog_orthology_type")), all_vars(. == 'ortholog_one2one')) %>%
+  distinct(get(paste0(species_1, "_homolog_ensembl_gene")), `.keep_all` = TRUE)
+print(dim(one2one)) #1709 by 19 
+
+# Build a many to many mapping object, using orthologs with better wga mapping
+# In order we care about: orthology confidence, goc scores, wga coverage
+many2many = homology_tbl %>% filter_at(vars(ends_with("homolog_orthology_type")), 
+                                       all_vars(. != 'ortholog_one2one'))
+many2many = many2many %>% filter(!is.na(get(paste0(species_1, "_homolog_ensembl_gene"))) & get(paste0(species_1, "_homolog_ensembl_gene")) != "")
+#print(dim(many2many)) #8843 by 18
+many2many_copy <- many2many %>% rowid_to_column("index")
+
+# Combine the one-to-one mappings with the high homology many-to-many mappings
+order = c("mmusculus")
+avail_ordered = c() # initialize variable
+for (attr in c("orthology_confidence", "homolog_goc_score", "homolog_wga_coverage")){
+
+    avail_homo = c(avail_attributes$name[grepl(attr, avail_attributes$name)])
+
+    for (i in seq(1, length(order))){
+   avail_ordered = c(avail_ordered, avail_homo[grepl(order[i], avail_homo)])
+  }
+}
+avail_homo = avail_ordered
+many2many_copy_homo <- many2many %>% rowid_to_column("index")
+i <- 1
+many2many_most_homo = data.frame()
+
+while (nrow(many2many_copy_homo) > 0) {
+  dd <- many2many_copy_homo %>%
+        filter(get(paste0(species_1, "_homolog_ensembl_gene"))  == levels(factor(many2many_copy_homo[[paste0(species_1, "_homolog_ensembl_gene")]]))[1])
+  
+  genes_now = dd %>% dplyr::select(ends_with("_homolog_ensembl_gene")) %>% flatten() %>% unique() %>% as.character()
+
+  gene_group <- many2many_copy_homo %>%
+        dplyr::filter_at(vars(ends_with("_homolog_ensembl_gene")), any_vars(. %in% genes_now))
+
+    if(nrow(gene_group) == 1) {
+        gene_keep = gene_group
+    } else {
+    gene_keep = gene_group %>%
+        dplyr::arrange(
+        sapply(avail_homo, FUN = function(x) get(x)) ## keep the member of group with highest overall confidence
+        ) %>%
+            dplyr::slice(n())
+    }
+    many2many_copy_homo <- many2many_copy_homo %>%
+            filter(!index %in% gene_group$index)
+    many2many_most_homo[i,1:length(gene_keep)] <- gene_keep
+    i <- i+1
+
+}
+# Combine the many-to-many and one-to-one to make a master conversion table
+conv_table <- rbind(one2one[-19], many2many_most_homo[-1])
+write.csv(conv_table, "human_to_mouse_homology_table.csv")
+
+########## Replace murine values with human orthologs #########
+### test case
+#mouse_genes <- as.data.frame(c("Ms4a1","Dcn","Postn","Col1a2"))
+#colnames(mouse_genes) <- c('gene')
+
+# Left join our gene list with the conversion table
+# test <- mouse_genes %>%
+#   left_join(conv_table, by = c('gene' = "mmusculus_homolog_associated_gene_name"))
+
+# Now replace the gene names based on the corresponding human genes
+#gene <- test2$external_gene_name # since the order will be the same
+
+# # After trying several ways of renaming the Seurat genes, the object always broke, so we will do this at the beginning, when rendering the Seurat objects. 
+# # We will test this using the Koenitzer3 data
+# data <- Read10X("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/GSE145998/Koenitzer3/filtered_feature_bc_matrix")
+# mouse_genes <- as.data.frame(rownames(data))
+# colnames(mouse_genes) <- c("gene")
+# filt_conv_table <- conv_table[mouse_genes$gene 
+#                               %in% conv_table$mmusculus_homolog_associated_gene_name,]
+# merg_conv_table <- mouse_genes %>%
+#   left_join(filt_conv_table, by = c("gene" = "mmusculus_homolog_associated_gene_name"))
+# merg_conv_table <- merg_conv_table[!duplicated(merg_conv_table$gene),]
+# merg_conv_table$external_gene_name[merg_conv_table$external_gene_name==""] <- NA
+# merg_conv_table <- merg_conv_table %>% 
+#     mutate(external_gene_name = coalesce(external_gene_name,gene)) 
+# merg_conv_table$external_gene_name <- make.unique(merg_conv_table$external_gene_name)
+# 
+# length(unique(merg_conv_table$gene)) #32285
+# length(unique(merg_conv_table$external_gene_name)) #31518 without make.unique
+# rownames(data) <- merg_conv_table$external_gene_name
+
+
+# # Now make Seurat Object like normal
+# m_lung_koenitzer3 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_koenitzer3")
+# m_lung_koenitzer3$author <- "koenitzer"
+# saveRDS(m_lung_koenitzer3, "m_lung_koenitzer3.RDS")
+# # Do normal preprocessing and make sure it works
+# m_lung_koenitzer3[["percent.mt"]] <- PercentageFeatureSet(m_lung_koenitzer3, pattern = "^MT-")
+# m_lung_koenitzer3 <- SCTransform(m_lung_koenitzer3, vars.to.regress = "percent.mt")
+# m_lung_koenitzer3 <- FindVariableFeatures(m_lung_koenitzer3, selection.method = "vst", nfeatures = 2000)
+# #m_lung_koenitzer3.all.genes <- rownames(m_lung_koenitzer3)
+# #m_lung_koenitzer3 <- ScaleData(m_lung_koenitzer3, features = m_lung_koenitzer3.all.genes)
+# m_lung_koenitzer3 <- RunPCA(m_lung_koenitzer3, features = VariableFeatures(object = m_lung_koenitzer3), npcs = 30)
+# m_lung_koenitzer3 <- RunUMAP(m_lung_koenitzer3, reduction = "pca", dims = 1:30)
+# m_lung_koenitzer3 <- FindNeighbors(m_lung_koenitzer3, reduction = "pca", dims = 1:30)
+# m_lung_koenitzer3 <- FindClusters(m_lung_koenitzer3, resolution = 0.5)
+# m_lung_koenitzer3.markers <- FindAllMarkers(m_lung_koenitzer3, logfc.threshold = 0.5, min.pct = 0.6, only.pos = T)
+# DimPlot(m_lung_koenitzer3, label = T)
+```
+
+## Now that we know the operations, let's format them as a function that will take a vector of gene characters and output mapped homologs using one-to-one and many-to-many
+
+```{r}
+#| label: Define function to replace murine genes with human orthologs
+#| echo: FALSE
+
+mouse_to_human <- function(mouse_genes, conversion_table) {
+  mouse_genes <- as.data.frame(mouse_genes)
+  colnames(mouse_genes) <- c("gene")
+  filt_conv_table <- conv_table[mouse_genes$gene 
+                              %in% conv_table$mmusculus_homolog_associated_gene_name,]
+  merg_conv_table <- mouse_genes %>%
+    left_join(filt_conv_table, by = c("gene" = "mmusculus_homolog_associated_gene_name"))
+  merg_conv_table <- merg_conv_table[!duplicated(merg_conv_table$gene),]
+  merg_conv_table$external_gene_name[merg_conv_table$external_gene_name==""] <- NA
+  merg_conv_table <- merg_conv_table %>% 
+    mutate(external_gene_name = coalesce(external_gene_name,gene)) 
+  mapped_genes <- as.data.frame(make.unique(merg_conv_table$external_gene_name))
+  colnames(mapped_genes) <- c("human_ortho")
+  return(mapped_genes)
+}
+
+# Make sure the function works
+#test <- mouse_to_human(rownames(data), conv_table)
+```
+
+## We need to assemble the data into Seurat Objects, which we can then just load later. The following code chunks will generate the objects. After saving the seurat objects, they can be merged using the CHTC scripts.
 
 ```{r}
 #| label: download and read in data from Teichmann: Human Cell Atlas
@@ -118,12 +292,15 @@ rm(genes, mat_names,mat,meta, fixed, broken, acceptable)
 
 teich_nasal <- readRDS("Teich_nasal.RDS")
 teich_nasal$author <- "Teichmann"
+teich_nasal$organism <- "mouse"
 saveRDS(teich_nasal, "h_nasal_teich.RDS")
 teich_bronch <- readRDS("Teich_bronch.RDS")
 teich_bronch$author <- "Teichmann"
+teich_bronch$organism <- "mouse"
 saveRDS(teich_bronch, "h_bronch_teich.RDS")
 teich_alv <- readRDS("Teich_alv.RDS")
 teich_alv$author <- "Teichmann"
+teich_alv$organism <- "mouse"
 saveRDS(teich_alv, "h_alv_teich.RDS")
 ```
 
@@ -181,7 +358,7 @@ m_lung_kras <- tiss10x.mouse.anno
 m_lung_kras <- UpdateSeuratObject(m_lung_kras)
 rm(tiss10x.mouse.anno)
 m_lung_kras$author <- "krasnow"
-m_lung_kras$organism <- "human"
+m_lung_kras$organism <- "mouse"
 saveRDS(m_lung_kras, "m_lung_kras.RDS")
 # Load human sample
 load("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Lung/Human/EGAS00001004333/droplet_normal_lung_seurat_ntiss10x.P2.anno.20191002.RC4.Robj")
@@ -193,6 +370,23 @@ h_lung_kras <- readRDS("h_lung_kras.RDS")
 h_lung_kras$author <- "krasnow"
 h_lung_kras$organism <- "human"
 saveRDS(h_lung_kras, "h_lung_kras.RDS")
+
+# Load mouse sample from matrices 
+data <- fread("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/EGAS00001004333/mouse_droplet_TMS_UMIs.csv")
+meta <- read.csv("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/EGAS00001004333/mouse_droplet_TMS_metadata.csv")
+data <- as.matrix(data)
+rownames(data) <- data[,1]
+data <- data[-1]
+kassay <- CreateAssayObject(counts = data)
+# the metadata from 10x has an extra X at the beginning of the colnames (7385 - 24618)
+test <- meta$X[7385:24618]
+test2 <- paste("X",test, sep = "")
+meta$X[7385:24618] <- test2
+
+help <- setdiff(meta$X, colnames(data))
+# insert function to convert gene names
+m_lung_kras <- CreateSeuratObject(data, meta.data = test, assay = "RNA", min.cells = 3, min.features = 200, project = "m_lung_kras")
+
 ```
 
 ```{r}
@@ -383,6 +577,181 @@ h_fat_grund <- readRDS("h_fat_grundberg.RDS") #6171
 h_blood_kras_1 <- readRDS("h_blood_kras1.RDS") #E4344
 h_blood_kras_3 <- readRDS("h_blood_kras3.RDS") #E4344
 
+```
+
+After saving the seurat objects, they can be merged using the CHTC scripts. Alternatively, we need to map the mouse genes to human orthologs in order to be able to combine the datasets. This requires changing the feature names prior to generating the Seurat Object.
+
+```{r}
+#| label: Replace murine genes with human orthologs
+#| echo: FALSE
+library(biomaRt)
+library(dplyr)
+library(purrr)
+library(anndata)
+library(tidyverse)
+
+# Try a test case, then generate a function to apply to multiple objects
+# load test case 
+pbmc_small = SeuratObject::pbmc_small
+geneset <- rownames(pbmc_small)
+
+# Generate the mouse to human mapping dataframe
+# Set the biomaRt version we will be using, here we will use 108
+species1 = "hsapiens" # this is the species we want to map everything to
+mart <- useEnsembl("ensembl", version = "108", dataset = "hsapiens_gene_ensembl")
+
+# get genes in the main chrs of the first species
+genes_species_1 <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name"), mart = mart)
+
+# Find the Ensembl attributes related to mouse "homo"logues of human genes
+avail_attributes <- listAttributes(mart) %>% 
+  dplyr::filter(grepl("mmusc", name)) %>% 
+  dplyr::filter(grepl("homo", name)) %>%
+  dplyr::filter(!grepl("Query protein or transcript ID", description))
+
+# Generate the homology table
+# This maps mouse to human genes
+homology_tbl <- getBM(attributes = c("ensembl_gene_id", 
+                                    "external_gene_name", 
+                                    "chromosome_name", 
+                                    "start_position", 
+                                    "end_position", 
+                                    avail_attributes$name), 
+                     mart = mart, filters = "ensembl_gene_id",
+                     values = genes_species_1[["ensembl_gene_id"]])
+write.csv(homology_tbl, file = "human_mouse_homology_tbl.csv")
+
+#Filter to get all the one-to-one mapping homologues
+species_1 = "mmusculus" #select the species we want the human ortholog of
+one2one = homology_tbl %>% 
+  filter_at(vars(ends_with("homolog_orthology_type")), all_vars(. == 'ortholog_one2one')) %>%
+  distinct(get(paste0(species_1, "_homolog_ensembl_gene")), `.keep_all` = TRUE)
+print(dim(one2one))
+
+# Build a many to many mapping object, using orthologs with better wga mapping
+# In order we care about: orthology confidence, goc scores, wga coverage
+many2many = homology_tbl %>% filter_at(vars(ends_with("homolog_orthology_type")), 
+                                       all_vars(. != 'ortholog_one2one'))
+many2many = many2many %>% filter(!is.na(get(paste0(species_1, "_homolog_ensembl_gene"))) & get(paste0(species_1, "_homolog_ensembl_gene")) != "")
+print(dim(many2many))
+many2many_copy <- many2many %>% rowid_to_column("index")
+
+# Combine the one-to-one mappings with the high homology many-to-many mappings
+order = c("mmusculus")
+avail_ordered = c() # initialize variable
+for (attr in c("orthology_confidence", "homolog_goc_score", "homolog_wga_coverage")){
+
+    avail_homo = c(avail_attributes$name[grepl(attr, avail_attributes$name)])
+
+    for (i in seq(1, length(order))){
+   avail_ordered = c(avail_ordered, avail_homo[grepl(order[i], avail_homo)])
+  }
+}
+avail_homo = avail_ordered
+many2many_copy_homo <- many2many %>% rowid_to_column("index")
+i <- 1
+many2many_most_homo = data.frame()
+
+while (nrow(many2many_copy_homo) > 0) {
+  dd <- many2many_copy_homo %>%
+        filter(get(paste0(species_1, "_homolog_ensembl_gene"))  == levels(factor(many2many_copy_homo[[paste0(species_1, "_homolog_ensembl_gene")]]))[1])
+  
+  genes_now = dd %>% dplyr::select(ends_with("_homolog_ensembl_gene")) %>% flatten() %>% unique() %>% as.character()
+
+  gene_group <- many2many_copy_homo %>%
+        dplyr::filter_at(vars(ends_with("_homolog_ensembl_gene")), any_vars(. %in% genes_now))
+
+    if(nrow(gene_group) == 1) {
+        gene_keep = gene_group
+    } else {
+    gene_keep = gene_group %>%
+        dplyr::arrange(
+        sapply(avail_homo, FUN = function(x) get(x)) ## keep the member of group with highest overall confidence
+        ) %>%
+            slice(n())
+    }
+    many2many_copy_homo <- many2many_copy_homo %>%
+            filter(!index %in% gene_group$index)
+    many2many_most_homo[i,1:length(gene_keep)] <- gene_keep
+    i <- i+1
+
+}
+# Combine the many-to-many and one-to-one to make a master conversion table
+conv_table <- rbind(one2one[-19], many2many_most_homo[-1])
+write.csv(conv_table, "human_to_mouse_homology_table.csv")
+########## Replace murine values with human orthologs #########
+### test case
+mouse_genes <- as.data.frame(c("Ms4a1","Dcn","Postn","Col1a2"))
+colnames(mouse_genes) <- c('gene')
+
+# Left join our gene list with the conversion table
+test <- mouse_genes %>%
+  left_join(conv_table, by = c('gene' = "mmusculus_homolog_associated_gene_name"))
+
+# Now replace the gene names based on the corresponding human genes
+gene <- test2$external_gene_name # since the order will be the same
+
+### Now lets try a real test case using the mouse krasnow data
+dummy <-readRDS("m_lung_rare_f.RDS")
+mouse_genes <- as.data.frame(dummy@assays$RNA@data@Dimnames[[1]])
+colnames(mouse_genes) <- c("gene")
+
+# Let's make sure our conversion table has all the genes we need:
+# Raredon: 24k genes, sampath: 17k genes, krasnow: 23.4k
+# This points out a limitation, not all mouse genes have orthologs with human genes
+# We will have to implement an %in% operator to make this easier
+filt_conv_table <- conv_table[mouse_genes$gene 
+                              %in% conv_table$mmusculus_homolog_associated_gene_name,]
+merg_conv_table <- mouse_genes %>%
+  left_join(filt_conv_table, by = c("gene" = "mmusculus_homolog_associated_gene_name"))
+# This returns the total mouse count data and homologue genes are replaced when possible
+
+## We will now add the mouse genes into the same column as the human orthos
+# make empty values into NAs
+ merg_conv_table$external_gene_name[merg_conv_table$external_gene_name==""] <- NA
+# replace NAs with values from "gene" column
+merg_conv_table %>% 
+    mutate(external_gene_name = coalesce(external_gene_name,gene)) -> merg_conv_table
+# Some values are duplicated due to transcripts 1-2 basepairs longer
+merg_conv_table <- merg_conv_table[!duplicated(merg_conv_table$gene),]
+
+# After trying several ways of renaming the Seurat genes, the object always broke, so we will do this at the beginning, when rendering the Seurat objects. 
+# We will test this using the Koenitzer3 data
+data <- Read10X("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Mouse/GSE145998/Koenitzer3/filtered_feature_bc_matrix")
+mouse_genes <- as.data.frame(rownames(data))
+colnames(mouse_genes) <- c("gene")
+filt_conv_table <- conv_table[mouse_genes$gene 
+                              %in% conv_table$mmusculus_homolog_associated_gene_name,]
+merg_conv_table <- mouse_genes %>%
+  left_join(filt_conv_table, by = c("gene" = "mmusculus_homolog_associated_gene_name"))
+merg_conv_table <- merg_conv_table[!duplicated(merg_conv_table$gene),]
+merg_conv_table$external_gene_name[merg_conv_table$external_gene_name==""] <- NA
+merg_conv_table <- merg_conv_table %>% 
+    mutate(external_gene_name = coalesce(external_gene_name,gene)) 
+merg_conv_table$external_gene_name <- make.unique(merg_conv_table$external_gene_name)
+
+length(unique(merg_conv_table$gene)) #32285
+length(unique(merg_conv_table$external_gene_name)) #31518 without make.unique
+rownames(data) <- merg_conv_table$external_gene_name
+
+# Now make Seurat Object like normal
+m_lung_koenitzer3 <-CreateSeuratObject(data, min.cells = 3, min.features = 200, project = "m_lung_koenitzer3")
+m_lung_koenitzer3$author <- "koenitzer"
+saveRDS(m_lung_koenitzer3, "m_lung_koenitzer3.RDS")
+# Do normal preprocessing and make sure it works
+m_lung_koenitzer3[["percent.mt"]] <- PercentageFeatureSet(m_lung_koenitzer3, pattern = "^MT-")
+m_lung_koenitzer3 <- SCTransform(m_lung_koenitzer3, vars.to.regress = "percent.mt")
+m_lung_koenitzer3 <- FindVariableFeatures(m_lung_koenitzer3, selection.method = "vst", nfeatures = 2000)
+#m_lung_koenitzer3.all.genes <- rownames(m_lung_koenitzer3)
+#m_lung_koenitzer3 <- ScaleData(m_lung_koenitzer3, features = m_lung_koenitzer3.all.genes)
+m_lung_koenitzer3 <- RunPCA(m_lung_koenitzer3, features = VariableFeatures(object = m_lung_koenitzer3), npcs = 30)
+m_lung_koenitzer3 <- RunUMAP(m_lung_koenitzer3, reduction = "pca", dims = 1:30)
+m_lung_koenitzer3 <- FindNeighbors(m_lung_koenitzer3, reduction = "pca", dims = 1:30)
+m_lung_koenitzer3 <- FindClusters(m_lung_koenitzer3, resolution = 0.5)
+#install.packages('BiocManager')
+#BiocManager::install('limma')
+m_lung_koenitzer3.markers <- FindAllMarkers(m_lung_koenitzer3, logfc.threshold = 0.5, min.pct = 0.6, only.pos = T)
+DimPlot(m_lung_koenitzer3, label = T)
 ```
 
 ## Assign cell types to each cluster
@@ -588,28 +957,14 @@ h_cca.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Primin
 h_cca <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_cca/h_lung_combined.RDS")
 DefaultAssay(h_cca) <- "SCT"
 DimPlot(h_cca, label = T)
-```
-
-#Remove Doublets using DoubletFinder
-
-```{r}
-#| label: Load the Seurat objects, last 4 of GEO/EGA ID in comment
-#| echo: FALSE
-## pK Identification (no ground-truth) ---------------------------------------------------------------------------------------
-sweep.res.list_mlung <- paramSweep_v3(mlung.combined, PCs = 1:30, sct = TRUE, num.cores = 6)
-sweep.stats_mlung <- summarizeSweep(sweep.res.list_mlung, GT = FALSE)
-bcmvn_mlung <- find.pK(sweep.stats_mlung)
-
-
-## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
-homotypic.prop <- modelHomotypic(mlung.combined@meta.data$CellTypes)  ## ex: annotations <- seu_kidney@meta.data$ClusteringResults
-nExp_poi <- round(homotypic.prop*nrow(mlung.combined@meta.data))  ## Assuming 7.5% doublet formation rate - tailor for your dataset
-nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
-
-## Run DoubletFinder with varying classification stringencies ----------------------------------------------------------------
-test <- doubletFinder_v3(mlung.combined, PCs = 1:30, pN = 0.25, pK = 0.3, nExp = nExp_poi, reuse.pANN = FALSE, sct = TRUE)
 
 ```
+
+RPCA without the stripp samples seems to have best integrated the cells across datasets. A few exceptions are: cluster 1 is specific to Okuda (the unidentified cells from their manuscript), and and cluster 10 is the nasal goblet cells that are only found in the Teich nasal data. Moving forward, we will use the h_rpca_ns data for the human lung + nose. This is congruent with the muring approach, which also uses rPCA.
+
+As a note, when performing the clustering on the High-throughput computing system, be sure to use a lot of RAM and only 1-2 CPUs. Increasing CPU count balloons the amount of RAM requested by R.
+
+**In the future, we can also try MultiMAP, which will need to be run on the linux CHTC platform.**
 
 ## Now we can look at different PRRs across tissues and organisms
 
@@ -715,10 +1070,8 @@ library(tidyverse)
 # Set the biomaRt version we will be using, here we will use 108
 species1 = "hsapiens" # this is the species we want to map everything to
 mart <- useEnsembl("ensembl", version = "108", dataset = "hsapiens_gene_ensembl")
-# get genes in the main chrs of the first species
-genes_species_1 <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name"), mart = mart) %>%
-  dplyr::filter(chromosome_name %in% (genes_main_chr[species_1] %>% purrr::flatten_chr()))
 
+# get genes in the main chrs of the first species
 genes_species_1 <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "chromosome_name"), mart = mart)
 
 # Find the Ensembl attributes related to mouse "homo"logues of human genes
@@ -737,10 +1090,10 @@ homology_tbl <- getBM(attributes = c("ensembl_gene_id",
                                     avail_attributes$name), 
                      mart = mart, filters = "ensembl_gene_id",
                      values = genes_species_1[["ensembl_gene_id"]])
+write.csv(homology_tbl, file = "human_mouse_homology_tbl.csv")
 
-write.csv(homology_tbl, file = "homology_tbl.csv")
-
-species_1 = "mmusculus" #select the species we want the human orthologue of
+#Filter to get all the one-to-one mapping homologues
+species_1 = "mmusculus" #select the species we want the human ortholog of
 one2one = homology_tbl %>% 
   filter_at(vars(ends_with("homolog_orthology_type")), all_vars(. == 'ortholog_one2one')) %>%
   distinct(get(paste0(species_1, "_homolog_ensembl_gene")), `.keep_all` = TRUE)
