@@ -1,0 +1,20 @@
+# CellRanger Build
+
+universe = docker
+docker_image = ajwhitehead/chtc_seurat_container:latest
+log = run_h_seurat_$(Cluster)_$(Process).log
+
+executable = run_h_seurat.sh
+arguments =
+output = run_h_seurat_$(Cluster)_$(Process).out
+error = run_h_seurat_$(Cluster)_$(Process).err
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+requirements = (OpSysMajorVer =?= 8)
+request_cpus = 1
+request_memory = 500GB
+request_disk = 400GB
+
+queue 1

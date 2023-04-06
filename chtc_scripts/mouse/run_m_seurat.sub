@@ -1,0 +1,20 @@
+# make a mouse lung object in Seurat
+
+universe = docker
+docker_image = ajwhitehead/chtc_seurat_container:latest
+log = run_m_seurat_$(Cluster)_$(Process).log
+
+executable = run_seurat.sh
+arguments =
+output = run_m_seurat_$(Cluster)_$(Process).out
+error = run_m_seurat_$(Cluster)_$(Process).err
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+
+request_cpus = 1
+request_memory = 400GB
+request_disk = 400GB
+
+queue 1

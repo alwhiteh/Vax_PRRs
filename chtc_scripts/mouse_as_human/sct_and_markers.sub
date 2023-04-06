@@ -1,0 +1,20 @@
+# do SCTTransform for mouse to human mapped sc data for the lung
+
+universe = docker
+docker_image = ajwhitehead/chtc_seurat_container:latest
+log = sct_markers_$(Cluster)_$(Process).log
+
+executable = sct_and_markers.sh
+arguments =
+output = sct_and_markers_$(Cluster)_$(Process).out
+error = sct_and_markers_$(Cluster)_$(Process).err
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+requirements = (OpSysMajorVer =?= 8)
+request_cpus = 1
+request_memory = 300GB
+request_disk = 200GB
+
+queue 1

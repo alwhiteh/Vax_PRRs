@@ -1,0 +1,20 @@
+# get the sct markers for each clusterd
+
+universe = docker
+docker_image = ajwhitehead/chtc_seurat_container:latest
+log = sct_markers_$(Cluster)_$(Process).log
+
+executable = sct_markers.sh
+arguments =
+output = sct_markers_$(Cluster)_$(Process).out
+error = sct_markers_$(Cluster)_$(Process).err
+
+should_transfer_files = YES
+when_to_transfer_output = ON_EXIT
+
+requirements = (OpSysMajorVer =?= 7)
+request_cpus = 4
+request_memory = 200GB
+request_disk = 100GB
+
+queue 1

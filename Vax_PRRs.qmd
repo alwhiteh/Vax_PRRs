@@ -315,6 +315,20 @@ saveRDS(teich_alv, "h_alv_teich.RDS")
 ```
 
 ```{r}
+#| label: Process the Tiechman single cell and nuclei human data
+#| echo: FALSE
+data <- Read10X("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Human/PRJEB52292/matrix_files")
+meta <- read.csv("/Users/alexwhitehead/sc_RNA_raw_data/Lung/Human/PRJEB52292/metadata.csv")
+rownames(meta) <- meta$X
+meta <- meta[,-1]
+teich_hlung_sc_sn <-CreateSeuratObject(data, meta.data = meta)
+teich_hlung_sc_sn[[]]
+teich_hlung_sc_sn$author <- "Teich_sc_sn"
+teich_hlung_sc_sn$organism <- "human"
+saveRDS(teich_hlung_sc_sn, "human/teich_sc_sn.RDS")
+```
+
+```{r}
 #| label: Generate the Human Adipose scRNA set Seurat from Rosen 
 #| echo: FALSE
 data <- Read10X("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/sc_RNA_datasets/Adipose/Human/GSE176171_Mixed_BMI")  
@@ -675,55 +689,68 @@ saveRDS(m_lung_koenitzer3_h, "mouse_as_human/m_lung_koenitzer3_h.RDS")
 ```{r}
 #| label: Label clusters in the murine combined object
 #| echo: FALSE
-mlung.markers <- read.csv("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/mlung_markers.csv")
-
+mlung.markers <- read.csv("mouse/mlung.combined.markers.csv")
 mlung.combined <- readRDS("mouse/m_lung_combined.RDS")
 
 # Here are what the clusters are:
-# Cluster 0 = Myl6, Acta2 -  SMC
-# Cluster 1 = lyve1, cd36 -  Lymphatic endothelial cells
-# Cluster 2 = Lyz2, Ly6c2, Ms4a6c, Ccr2 -Monocytes/DC/Mac
-# Cluster 3 = Il7r, Id2, Nkg7, Cd3g, Cd3b, Thy1 - T Cells + NK Cells
-# Cluster 4 = Sftpc, Sftpa - Alv Type 2
-# Cluster 5 = Gsn, Ogn, Col3a1, Col1a2 - Stromal
-# Cluster 6 = Lyz2, Cd44, Mrc1, Ctss, Ctsd - Alveolar Macrophages
-# Cluster 7 = Top2a, Hmgb2, Ki67 - Dividing Cells
-# Cluster 8 = Cd74, H2, Ms4a1 - B Cells + Plasma Cells
-# Cluster 9 = Actb, Il4i1 - Inflammatory SMCs?
-# Cluster 10 = Spp1, Postn, Col4a1, Sparc - Stromal
-# Cluster 11 = Il1b, Csf3r, jun/fos - Neutrophils/Eosinophils
-# Cluster 12 = Ager,Sparc, Vegfa, Krt7 - Alveolar Type 1 
-# Cluster 13 = Foxj1 - Cilliated Cells
-# Cluster 14 = Ly6a, Ly6c1, Cd36, S1pr - Endothelial Cells
-# Cluster 15 = Scgb3a2, Prdx6 - Club Cells/Secretory Cells
-# Cluster 16 = Apoe, C1qb, C1qc, Cd74, H2 - Trem2 Macrophage/DC
-# Cluster 17 = H2, CD74, - DCs
-# Cluster 18 = Cdk14, Xist, Elmo1 - Dividing Cells
-# Cluster 19 = Acta2, Tagln - Smooth Muscle Cells
-# Cluster 20 = C3, C4, Dcn - Mesothelial Cells
+# Cluster 0 = Scgb1A1/3 - Secretory/Club Cells
+# Cluster 1 = Cldn5, Pecam1, cd36, Plvap - endothelial cells (gCap)
+# Cluster 2 = Lyz1, Lyz2, Apoe, S100a4, Ccr2 - Monocytes (classical and non)
+# Cluster 3 = Gsn, Col3a1, Col1a1,Pdgfra - Stromal/ Fibroblast
+# Cluster 4 = Chil3, Chil3l3, Lyz2, CD44, Mertk - Alveolar Macs
+# Cluster 5 = Sftpc, Sftpb - Alv Type2
+# Cluster 6 = Ccl5, Il7r, Nkg7 - T Cells
+# Cluster 7 = CD74, Ighm - B Cells
+# Cluster 8 = Hdc, S100a8, Retnlg, Cxcl2 - Trem2 Macs + Phils + Mast (Granulocytes)
+# Cluster 9 = Col4a4/3, Sema3a, Shroom3, Cldn18, Cdh13 - Alv Type 1
+# Cluster 10 = Prickle2, Icam2, Ly6a, CD36, PECAM1 - Endothelial/Aerocyte (aCap)
+# Cluster 11 = Spag17, Foxj1, Dnah9 - Cilliated Cells
+# Cluster 12 = Scgb1a1, Col23a1, Atp2b2, Nwd2 - Club Cells + Goblet Cells
+# Cluster 13 = Postn, Spp1, Col4, - More Stromal/Pericyte
+# Cluster 14 = H2-ab1, H2, Ccr2 - Mo-Dendritic Cells
+# Cluster 15 = Gzma, klrd1, Nkg7, klre1 - NK Cells
+# Cluster 16 = h2afz, Chil3l3, Ly6c2 - Mo-Macrophages
+# Cluster 17 = Cd74, Flt1, H2, Ctss - Interstitial Macrophages
+# Cluster 18 = Rln, Col3, Tagln - Smooth Muscle
+# Cluster 19 = Flt1, S100a4, Ly6c2, Plac8 - Monocytes
+# Cluster 20 = C3, Sulf1, Mast4, Dcn - Mesothelial Cells
+# Clutter 21 = Sftpb -Alv Type 2
+# Cluster 22 = Lymphatic Endo?
+# Cluster 23 = ccl3/4/9, Cd7, Hdc, Il6 - Mast? Eosinophils? Basophils? (Granulocytes)
+# Cluster 24 = Secretory/Club
+# Cluster 25 = Secretory/Club
+# Cluster 26 = Secretory/Club
+# Cluster 27 = Secretory/Club
 
 mlung.combined <- RenameIdents(mlung.combined, 
-                         `0` = "SMC_1", 
-                         `1` = "Lymphatic_Endothelial_Cells", 
+                         `0` = "Secretory/Club", 
+                         `1` = "Endothelial", 
                          `2` = "Monocytes/DC/Mac",
-                         `3` = "T_and_NK_Cells", 
-                         `4` = "Alv_Type_2",
-                         `5` = "Stromal", 
-                         `6` = "Alveolar_Macrophages",
-                         `7` = "Dividing_Cells_1",
-                         `8` = "B_and_Plasma_Cells", 
-                         `9` = "SMC_2", 
-                         `10`= "Stromal_2",
-                         `11`= "Neutrophils/Eosinophils",
-                         `12`= "Alv_Type_1",
-                         `13`= "Cilliated_Cells", 
-                         `14`= "Endothelial_Cells",
-                         `15`= "Club/Secretory_Cells",
-                         `16`= "Trem2_Macrophage/DCs",
-                         `17`= "DCs", 
-                         `18`= "Dividing_Cells_2",
-                         `19`= "SMC_3",
-                         `20`= "Mesothelial_Cells")
+                         `3` = "Stromal/Fibroblast", 
+                         `4` = "Alv_Macrophages",
+                         `5` = "Alv_Type_2", 
+                         `6` = "T_Cells",
+                         `7` = "B_Cells",
+                         `8` = "Granulocytes", 
+                         `9` = "Alv_Type_1", 
+                         `10`= "Endothelial",
+                         `11`= "Cilliated",
+                         `12`= "Goblet/Club",
+                         `13`= "Stromal/Pericyte", 
+                         `14`= "Mo-DCs",
+                         `15`= "NK",
+                         `16`= "Mo-Mac",
+                         `17`= "Interstitial_Macs", 
+                         `18`= "Smooth_Muscle",
+                         `19`= "Monocytes",
+                         `20`= "Mesothelial_Cells",
+                         `21`= "Alv_Type_2",
+                         `22`= "Endothelial",
+                         `23`= "Granulocytes",
+                         `24`= "Secretory/Club",
+                         `25`= "Secretory/Club",
+                         `26`= "Secretory/Club",
+                         `27`= "Secretory/Club")
 
 mlung.combined$CellTypes <- Idents(mlung.combined)
 table(Idents(mlung.combined))
@@ -741,53 +768,45 @@ DimPlot(mlung.combined, label = T)
 DefaultAssay(mlung.combined) <- "SCT"
 
 # Remove the dividing cell clusters
-mlung.combined <- subset(mlung.combined, idents = c("Dividing_Cells_2","Dividing_Cells_1"), invert = TRUE)
+#mlung.combined <- subset(mlung.combined, idents = c("Dividing_Cells_2","Dividing_Cells_1"), invert = TRUE)
 
 # Save the filtered data
 saveRDS(mlung.combined, "mouse/mlung.combined.filtered.RDS")
 
-
+mlung <- readRDS("mouse/mlung.combined.filtered.RDS")
 
 # Lets see if we can export the counts and metadata from the combined object, the convert the mouse genes into human genes, and reassemble the seurat object, cluster, etc. 
 # Extract count data, then generate new assay
 mlung.combined <- readRDS("mouse/mlung.combined.filtered.RDS")
-DefaultAssay(mlung.combined) <- 'integrated'
-counts <- GetAssayData(object = mlung.combined, slot = "data")
-
-# Export metadata
-write.csv(mlung.combined@meta.data,"mouse/m_lung_metadata.csv")
+DefaultAssay(mlung.combined) <- 'RNA'
+write.csv(mlung.combined@meta.data, "mouse/m_lung_metadata.csv")
+counts <- GetAssayData(object = mlung.combined, slot = "data", assay = "RNA")
 meta <- read.csv("mouse/m_lung_metadata.csv", row.names = 'X')
 # remove erroneous metadata
-meta <- meta[,c(1,2,3,4,5,15,17,18,28)]
+meta <- meta[,c(1,2,3,15,17,18,28)]
 hu_genes <- mouse_to_human(counts@Dimnames[[1]], conv_table)
 counts@Dimnames[[1]] <- hu_genes$human_ortho
 new_obj <- CreateAssayObject(counts)
-mlungh <- CreateSeuratObject(new_obj, meta.data = meta, assay = "integrated", project = "m_lung_h")
-saveRDS(mlungh, "mouse_as_human/m_lung_h_ripped.RDS")
+mlungh <- CreateSeuratObject(new_obj, meta.data = meta, assay = "RNA", project = "m_lung_h")
 
+#Rip and rename the other assays too
+DefaultAssay(mlung.combined) <- 'integrated'
+counts <- GetAssayData(object = mlung.combined, slot = "data", assay = "integrated")
+hu_genes <- mouse_to_human(counts@Dimnames[[1]], conv_table)
+counts@Dimnames[[1]] <- hu_genes$human_ortho
+new_obj <- CreateAssayObject(counts)
+mlungh[["integrated"]] <- new_obj
 
-# # # Do normal preprocessing and make sure it works - we will use SeuratV3 workflow
-# mlungh <- readRDS("mouse_as_human/m_lung_h_ripped.RDS")
-# mlungh <- SCTransform(mlungh, method = 'glmGamPoi', verbose = FALSE)
-# #DefaultAssay(mlungh) <- 'SCT'
-# # mlungh <- NormalizeData(mlungh, verbose = FALSE)
-# # mlungh <- FindVariableFeatures(mlungh, selection.method = "vst", nfeatures = 2000)
-# # all.genes <- rownames(mlungh)
-# # mlungh <- ScaleData(mlungh, features = all.genes)
-# mlungh <- RunPCA(mlungh, features = VariableFeatures(object = mlungh), npcs = 30)
-# mlungh <- RunUMAP(mlungh, reduction = "pca", dims = 1:30)
-# mlungh <- FindNeighbors(mlungh, reduction = "pca", dims = 1:30)
-# mlungh <- FindClusters(mlungh, resolution = 0.3)
-# 
-# mlungh <- PrepSCTFindMarkers(mlungh)
-# mlung.combined.markers <- FindAllMarkers(mlungh, # this takes a while
-#                                          only.pos = TRUE, 
-#                                          min.pct = 0.45, 
-#                                          logfc.threshold = 0.25) 
-# #mlungh <- FindAllMarkers(mlungh, logfc.threshold = 0.5, min.pct = 0.6, only.pos = T)
-# DimPlot(mlungh, label = T, split.by = "author")
+# Finally do this for the SCT assay
+DefaultAssay(mlung.combined) <- 'SCT'
+counts <- GetAssayData(object = mlung.combined, slot = "data", assay = "SCT")
+hu_genes <- mouse_to_human(counts@Dimnames[[1]], conv_table)
+counts@Dimnames[[1]] <- hu_genes$human_ortho
+new_obj <- CreateAssayObject(counts)
+mlungh[["SCT"]] <- new_obj
+saveRDS(mlungh, "mouse_as_human/mlungh_ripped.RDS")
 
-
+# This then gets sent to the CHTC for reclustering and marker identification
 ```
 
 Repeat this process for the human samples
@@ -795,208 +814,164 @@ Repeat this process for the human samples
 ```{r}
 #| label: Label clusters in the human combined object
 #| echo: FALSE
-hlung.markers <- read.csv("//Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_nostrip_rpca/hlung.combined.markers.csv")
 
-hlung.combined <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human_nostrip_rpca/h_lung_combined.RDS") 
-
-DefaultAssay(hlung.combined) <- "SCT"
-
-hlung.markers %>% filter(cluster == 1) %>%
-  head(100)-> test
-write.csv(test$gene, "clust1.csv")
-
-hlung.markers %>% filter(cluster == 9) %>%
-  head(100)-> test
-write.csv(test$gene, "clust9.csv")
-
+## Use the new object with the Teichmann SC/SN data
+hlung.markers <- read.csv("human/hlung.combined.markers.csv")
+hlung <- readRDS("human/h_lung_combined.RDS") 
+DefaultAssay(hlung) <- "SCT"
+DimPlot(hlung, label = T, split.by = 'author') # The integration seems to have worked well
+DimPlot(hlung, label = T)
 # Here are what the clusters are:
-# Cluster 0 = CD74 and HLA-DR, Apoe - Alveolar Macs
-# Cluster 1 = MT RNAs, TUBB, CALM1 - Okuda Undefined - Cilliated Cells (based on Metascape)
-# Cluster 2 = Keratins 15,17,19, CD9 - Basal Cells 
-# Cluster 3 = SFTPC/A/B - Type 2 alveolar
-# Cluster 4 = MALAT1, Mhc2, CTSS, CD74 - Mono/Mac
-# Cluster 5 = Fcn3, Cldn5, Mt2A, HLA-e, HLA-c, SPARC - Endothelial (krasnow)
-# Cluster 6 = CAPS, Tppp3 - Cilliated (okuda)
-# Cluster 7 = SCGB1/3, SAA1, Muc5AC - Secretory p
-# Cluster 8 = IL7r, CXCR4, NKG7, CD3e - CD4 T and NK cells
-# Cluster 9 = Sftpa/b - Type 2 alveolar? - specific to stripp
-# Cluster 10 = Jun/ATF3, Cldn4, Sox4  - 
-# Cluster 11 = Sftpc, Sftpa  - More secretory cells? - specific to stripp
-# Cluster 12 = Scgb3a2, Timp3, Sparcl1 - secretory?
-# Cluster 13 = - specific to teichmann - Nasal Epithelial Cells?
-# Cluster 14 = Gzmb, Nkg7, Cd7 - CD8 T cells
-# Cluster 15 = Cldn5, HLA-E - Endothelial cells
-# Cluster 16 = Krt19, Fos - Basal Cells
-# Cluster 17 = AGER, Cav1, Krt7, Cd55 - Type 1 alveolar (habermann)
-# Cluster 18 = MT, RPL, CAP - cilliated?
-# Cluster 19 = JCHAIN, CD79 - B Cells
-# Cluster 20 = TAGLN, ACTA2 - SMCs
-# CLuster 21 = Tryptases, CPA3 - Mast Cells
-# Cluster 22 = Top2a, histones, hmgb - Dividing Cells
-# Cluster 23 = Col1, Col3, DCN - Fibroblasts
-# Cluster 24 = Lyz - Granluocytes? But CD45 Negative?
-# Cluster 25 = CCL21, LYVE1 - Lymphatic Endothelial Cells
+# Cluster 0 = HLA-DR, MARCO, CD68 - Alveolar Macrophages
+# Cluster 1 = CLDN5, PECAM1 - Endothelial Cells, Vascular
+# Cluster 2 = IL32, CCL5, CD3, NGK7 - T cells, CD4+, CD8+, gdT, ILC, MAIT,NKT
+# Cluster 3 = S100A8, CTSS, Lyz, HLA-DR, CD68 - Monocyte, Macrophages + DCs
+# Cluster 4 = FOXJ1, CAPS, TPP3, SNTN - Cilliated
+# Cluster 5 = SFTPC/A/B - Alv Type 2
+# Cluster 6 = MUC5AC, SCGB3A1/1A1, MSMB - Goblet - Secretory Cells, some Ionocyte
+# Cluster 7 = KRT17, KRT19 - Basal Cells
+# Cluster 8 = GNLY, NKG7, CD7, CD69 - T Cells, NK Cells
+# Cluster 9 =  DCN, LUM, COl1A1, Col6A1 - Fibroblasts, Mesothelial, SMC
+# Cluster 10 = LAMA2, SLIT2, ROBO2, ACAN, COl1A2 - Chrondrocytes, Fibroblasts, schwann
+# Cluster 11 = CFTR, STFPC - AT2 + ionocyte
+# Cluster 12 = PTPRC, CLB, CD247 (CD3z), CD96 - Mainly NK, but T cells also, etc
+# Cluster 13 = PECAM1, CLDN5, HLA-E, B2M, SPARC - Endothelial, Vasc, Cap a 
+# Cluster 14 = Muc5b, foxp1 - SMG Mucosal Cells
+# Cluster 15 = Lama3, Col8A1, FOXP1, AGER - AT1
+# Cluster 16 = TAGLN, ACTA2 - SMCs
+# Cluster 17 = MS4A1, CD79A, CD86 - Basal Cells, Goblet, Secretory Club + Goblet, Mucous, ionocyte
+# Cluster 18 = Mainly Mono/Mac, some DCs
+# Cluster 19 = DCN, Col3a1, Col1A2, SPARC, DMBT1 - Fibroblasts, SMG Ductal Cells, Serous
+# Cluster 20 = HDC, CPA3, Ly6a, Ly6c1, Lyve1, S1PR1, CD36 - Mast Cells
+# CLuster 21 = LYVE1, Spag17, CCL21 - Lyphatic Endothelial
+# Cluster 22 = PECAM1, MT-, ELN, COl4A1, SPARC - Capillary Endothelial
+# Cluster 23 = Rpl genes - Memory B Cells, Naive B Cells
+# Cluster 24 = SCGB1A1/3A1, TPPP3 - More Secretory Cells
+# Cluster 25 = IGHM, CD79B, CD79A, CD74 - Plasma Cells, IgA, IgG, some RBCs
+# Cluster 26 = Chi3l3, Lyz.1, CCL23 - More Smooth Muscle
+# Cluster 27 = DMBT1 - SMG Serous
+# Cluster 28 = More Lymphatic Endothelial
 
-# Here are what the NEW clusters are:
-# Cluster 0 = CD74 and HLA-DR, Apoe - Alveolar Macs
-# Cluster 1 = MT RNAs, TUBB, CALM1 - Okuda Undefined - Cilliated Cells (based on Metascape)
-# Cluster 2 = IL7r, CXCR4, NKG7, CD3e - CD4 T and NK cells
-# Cluster 3 = Cldn5, HLA-E - Endothelial cells
-# Cluster 4 = SCGB1/3, SAA1, Muc5AC - Secretory cells
-# Cluster 5 = Keratins 15,17,19, CD9 - Basal Cells 
-# Cluster 6 = CAPS, Tppp3 - Alveolar Type 2
+hlung$seurat_clusters <- Idents(hlung)
+hlung <- RenameIdents(hlung,
+                         `0` = "Alveolar Macrophages",
+                         `1` = "Endothelial_Cells_Vascular",
+                         `2` = "T_NK_MAIT",
+                         `3` = "Mono_Mac_DC",
+                         `4` = "Cilliated",
+                         `5` = "Alv_Type_2",
+                         `6` = "Secretory/Ionocyte",
+                         `7` = "Basal",
+                         `8` = "T/NK",
+                         `9` = "Stromal",
+                         `10`= "Chondro_Fibro_Schwann",
+                         `11`= "Alv_Type_2/Iono",
+                         `12`= "NK",
+                         `13`= "Endothelial_cells_Cap_a",
+                         `14`= "SMG_Mucosal",
+                         `15`= "AT1",
+                         `16`= "SMCs",
+                         `17`= "Basal/Goblet/Club",
+                         `18`= "Mono_Mac",
+                         `19`= "Fibroblasts/SMG_Ductal/Serous",
+                         `20`= "Mast",
+                         `21`= "Lymphatic_Endothelial",
+                         `22`= "Endothalial_Capillary",
+                         `23`= "B_Cells",
+                         `24`= "Secretory_Cells",
+                         `25`= "Plasma_Cells",
+                         `26`= "SMCs",
+                         `27`= "SMG_Serous",
+                         `28`= "Lymphatic_Endothelial")
+hlung$CellType_AW <- Idents(hlung)
+saveRDS(hlung, "human/hlung_anno.RDS")
 
-# Cluster 7 = SCGB1/3, SAA1, Muc5AC - Secretory cells
-# Cluster 8 = IL7r, CXCR4, NKG7, CD3e - CD4 T and NK cells
-# Cluster 9 = Sftpa/b - Type 2 alveolar? - specific to stripp
-# Cluster 10 = Jun/ATF3, Cldn4, Sox4  - 
-# Cluster 11 = Sftpc, Sftpa  - More secretory cells? - specific to stripp
-# Cluster 12 = Scgb3a2, Timp3, Sparcl1 - secretory?
-# Cluster 13 = - specific to teichmann - Nasal Epithelial Cells?
-# Cluster 14 = Gzmb, Nkg7, Cd7 - CD8 T cells
-# Cluster 15 = Cldn5, HLA-E - Endothelial cells
-# Cluster 16 = Krt19, Fos - Basal Cells
-# Cluster 17 = AGER, Cav1, Krt7, Cd55 - Type 1 alveolar (habermann)
-# Cluster 18 = MT, RPL, CAP - cilliated?
-# Cluster 19 = JCHAIN, CD79 - B Cells
-# Cluster 20 = TAGLN, ACTA2 - SMCs
-# CLuster 21 = Tryptases, CPA3 - Mast Cells
-# Cluster 22 = Top2a, histones, hmgb - Dividing Cells
-# Cluster 23 = Col1, Col3, DCN - Fibroblasts
-# Cluster 24 = Lyz - Granluocytes? But CD45 Negative?
-# Cluster 25 = CCL21, LYVE1 - Lymphatic Endothelial Cells
-
-hlung.combined <- RenameIdents(hlung.combined, 
-                         `0` = "SMC_1", 
-                         `1` = "Lymphatic_Endothelial_Cells", 
-                         `2` = "Monocytes/DC/Mac",
-                         `3` = "T_and_NK_Cells", 
-                         `4` = "Alv_Type_2",
-                         `5` = "Stromal", 
-                         `6` = "Alveolar_Macrophages",
-                         `7` = "Dividing_Cells_1",
-                         `8` = "B_and_Plasma_Cells", 
-                         `9` = "SMC_2", 
-                         `10`= "Stromal_2",
-                         `11`= "Neutrophils/Eosinophils",
-                         `12`= "Alv_Type_1",
-                         `13`= "Cilliated_Cells", 
-                         `14`= "Endothelial_Cells",
-                         `15`= "Club/Secretory_Cells",
-                         `16`= "Trem2_Macrophage/DCs",
-                         `17`= "DCs", 
-                         `18`= "Dividing_Cells_2",
-                         `19`= "SMC_3",
-                         `20`= "Mesothelial_Cells")
-
-hlung.combined$CellTypes <- Idents(hlung.combined)
-table(Idents(hlung.combined))
-
-DimPlot(hlung.combined, label = T)
-# Compare with original author annotations
-# Idents(mlung.combined) <- "celltype"
-# DimPlot(mlung.combined, label = T)
-# Idents(mlung.combined) <- "free_annotation"
-# DimPlot(mlung.combined, label = T)
-# Idents(mlung.combined) <- "CellTypes"
-# Idents(mlung.combined) <- "seurat_clusters"
-
-# Set the rna values to normalized 
-DefaultAssay(hlung.combined) <- "SCT"
-
-# Remove the dividing cell clusters
-#hlung.combined <- subset(hlung.combined, idents = c("Dividing_Cells_2","Dividing_Cells_1"), invert = TRUE)
-
-# See each dataset's contribution to each cluster
-composition <- as.matrix(table(hlung.combined@active.ident, hlung.combined@meta.data$author))
-pct_composition <- composition/rowSums(composition)
-pct_composition <- as.data.frame(pct_composition)
-hogs <- pct_composition %>% filter(Freq > 0.7)
-
-# Why is there a cluster that is mainly made up of cells from Teichmann?
-interesting <- WhichCells(hlung.combined, idents = '13')
-thirteen <- subset(hlung.combined, cells = interesting)
-tiech_clust <- as.matrix(table(thirteen@meta.data$Sample, thirteen@active.ident))
-# These are the nasal samples
-tiech_clust <- as.matrix(table(hlung.combined@meta.data$Sample == '4951STDY7472266', hlung.combined@active.ident))
-
-tiech_clust <- as.matrix(table(hlung.combined@meta.data$Sample == '4951STDY7487593', hlung.combined@active.ident))
-
-FeaturePlot(object = hlung.combined, features = 'percent.mt', label = T)
-DefaultAssay(hlung.combined) <- "SCT"
-VlnPlot(object = hlung.combined, features = 'percent.mt')
-DefaultAssay(mlung.combined) <- "SCT"
-VlnPlot(object = mlung.combined, features = 'percent.mt')
-
-# Save the filtered data
-saveRDS(hlung.combined, "mlung.combined.filtered.RDS")
+hCil<- subset(hlung, idents = "Cilliated")
+saveRDS(hCil, "human/cilliated.RDS")
 ```
 
 And finally repeat this for the mouse as human samples
 
 ```{r}
-#| label: Label clusters in the human combined object
+#| label: Label clusters in the mouse-as-human combined object
 #| echo: FALSE
-mlungh.markers <- read.csv("//Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/mlungh.combined.markers.csv")
-
-mlungh.combined <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/m_lung_combined_h.RDS") 
+mlungh.markers <- read.csv("mouse_as_human/mlungh_markers.csv")
+mlungh.combined <- readRDS("mouse_as_human/mlungh_ripped_sct.RDS") 
 
 DefaultAssay(mlungh.combined) <- "SCT"
-
+# Scroll down to see that the cluster 18 is dividing cells
+#
 DimPlot(mlungh.combined, label = T)
+
+# Get rid of the "integrated" assay to save a lot of space
+mlungh <- DietSeurat(mlungh.combined, assays = c("RNA","SCT"), dimreducs = c("pca","umap"))
+
+saveRDS(mlungh, "mouse_as_human/mlungh.RDS")
+
+test <- table(mlungh$seurat_clusters, mlungh$CellTypes)
+write.csv(test, "mlungh_cell_types.csv")
 
 # Find the cell types for each cluster
 # Here are what the clusters were:
-# Cluster 0 = CD74 and HLA-DR, Apoe - Alveolar Macs
-# Cluster 1 = MT RNAs, TUBB, CALM1 - Okuda Undefined - Cilliated Cells (based on Metascape)
-# Cluster 2 = Keratins 15,17,19, CD9 - Basal Cells 
-# Cluster 3 = SFTPC/A/B - Type 2 alveolar
-# Cluster 4 = MALAT1, Mhc2, CTSS, CD74 - Mono/Mac
-# Cluster 5 = Fcn3, Cldn5, Mt2A, HLA-e, HLA-c, SPARC - Endothelial (krasnow)
-# Cluster 6 = CAPS, Tppp3 - Cilliated (okuda)
-# Cluster 7 = SCGB1/3, SAA1, Muc5AC - Secretory p
-# Cluster 8 = IL7r, CXCR4, NKG7, CD3e - CD4 T and NK cells
-# Cluster 9 = Sftpa/b - Type 2 alveolar? - specific to stripp
-# Cluster 10 = Jun/ATF3, Cldn4, Sox4  - 
-# Cluster 11 = Sftpc, Sftpa  - More secretory cells? - specific to stripp
-# Cluster 12 = Scgb3a2, Timp3, Sparcl1 - secretory?
-# Cluster 13 = - specific to teichmann - Nasal Epithelial Cells?
-# Cluster 14 = Gzmb, Nkg7, Cd7 - CD8 T cells
-# Cluster 15 = Cldn5, HLA-E - Endothelial cells
-# Cluster 16 = Krt19, Fos - Basal Cells
-# Cluster 17 = AGER, Cav1, Krt7, Cd55 - Type 1 alveolar (habermann)
-# Cluster 18 = MT, RPL, CAP - cilliated?
-# Cluster 19 = JCHAIN, CD79 - B Cells
-# Cluster 20 = TAGLN, ACTA2 - SMCs
-# CLuster 21 = Tryptases, CPA3 - Mast Cells
-# Cluster 22 = Top2a, histones, hmgb - Dividing Cells
-# Cluster 23 = Col1, Col3, DCN - Fibroblasts
-# Cluster 24 = Lyz - Granluocytes? But CD45 Negative?
-# Cluster 25 = CCL21, LYVE1 - Lymphatic Endothelial Cells
+# Cluster 0 = SCGB1A1 - Secretory/Club
+# Cluster 1 = PECAM1, CDH5 - Endothelial
+# Cluster 2 = SFTPC - Alv Type 2 
+# Cluster 3 = Ccl5, CD28, Il7R - T Cells
+# Cluster 4 = Plac8, S100a4, Apoe, Ly6c2 - Monocytes/DC/Mac
+# Cluster 5 = Mertk - Alveolar macrophages
+# Cluster 6 = MGP, Col1a1, DCN - Stromal/Fibroblast + Mesthoelial
+# Cluster 7 = IGHM, CD79 - B Cells
+# Cluster 8 = COL23, Col4a1, Col4a2 - Stromal
+# Cluster 9 = POSTN, SPP1, SPARC - Stromal
+# Cluster 10 = HDC, CXCL2, IL1b, A100a8/9 - Granulocytes + Mast Cells
+# Cluster 11 = AGER, Col4, CAV1, SEMA3E - AT1
+# Cluster 12 = PRICKLE2, CLDN5, PECAM1 - Endothelial
+# Cluster 13 = Ly6c, PLAC8, PCER1G - Mono/Mac
+# Cluster 14 = ELN, Col3, TAGLN - SMCs
+# Cluster 15 = Spag17, Spag16 - Cilliated Cells
+# Cluster 16 = H2, CD74, CCL17,CD209 - DCs
+# Cluster 17 = CCL5, Lyz.1, NKG7, IL2RB, KLRa9 - NK Cells
+# Cluster 18 = HMGB2, TOP2A, MKI67 - Dividing
+# Cluster 19 = APOE, H2, CD74, Saa3, FCER1G, FCGR2A - Trem2 Macs
+# Cluster 20 = SCGB1A1 - Club/Secretory Cells
+# CLuster 21 = CCL23, CD44, SIRPA, MERTK - Alveolar Macs
 
-# Here are what the clusters are:
-# Cluster 0 = SCGB1/3, SFTPC - Secretory/Club 
-# Cluster 1 = CD36, PECAM - Endothelial
-# Cluster 2 = SFTPC/A/B - Type 2 alveolar
-# Cluster 3 = Skap1, Dock2, Ribosomal Proteins - Cilliated?
-# Cluster 4 = Chil3, CCL23, CD9, Lyz, MERTK, Axl - Macrophages
-# Cluster 5 = Gsn, SLIT2, C7, Angptl1 - Stromal?
-# Cluster 6 = CD79A, H2 - B Cells
-# Cluster 7 = Scgb1a1, Sftpc - Secretory/Club
-# Cluster 8 = Plac8, Lyz, S100A4, 
-# Cluster 9 = Scgb1/3, Sftpc - Secretory/Club
-# Cluster 10 = Ptma - 
-# Cluster 11 = S100A9, Il1b, Cxcl2, Ccl23
-# Cluster 12 = Col4a3, Vegfa, 
-# Cluster 13 = SPag17, 
-# Cluster 14 = CD74, H2, 
-# Cluster 15 = Ly6C, Cldn5, PECAM1, CD36 - Lymphatic Endothelial Cells?
-# Cluster 16 = SCGB1, 
-# Cluster 17 = SCGB1/3, SFTPC - 
-# Cluster 18 = POSTN, Itga1, 
-# Cluster 19 = Muc16, DCN, C3, 
-# Cluster 20 = Foxp1, 
-# Cluster 21 = Col3a1, Eln, Col1a1, Col1a2 - Fibroblasts
+# Get rid of dividing cluster
+
+mlungh <- readRDS("mouse_as_human/mlungh.RDS")
+# mlungh <- RenameIdents(mlungh, 
+#                          `0` = "Secretory/Club", 
+#                          `1` = "Endothelial_Cells", 
+#                          `2` = "Alv_Type_2",
+#                          `3` = "T_Cells", 
+#                          `4` = "Mono_Mac",
+#                          `5` = "Alveolar_Macrophages", 
+#                          `6` = "Stromal_Mesothelial",
+#                          `7` = "B_Cells",
+#                          `8` = "Stromal", 
+#                          `9` = "Stromal", 
+#                          `10`= "Granulocyte_and_Mast",
+#                          `11`= "Alv_Type_1",
+#                          `12`= "Endothelial",
+#                          `13`= "Mono_Mac", 
+#                          `14`= "SMCs",
+#                          `15`= "Cilliated_Cells",
+#                          `16`= "DCs",
+#                          `17`= "NK_Cells", 
+#                          `19`= "Trem2_Macs",
+#                          `20`= "Secretory/Club",
+#                          `21` = "Alveolar_Macrophages")
+
+mlungh <- subset(mlungh, idents = '18', invert = T)
+DimPlot(mlungh, label = T)
+
+mlungh$m_to_h_reclust <- Idents(mlungh)
+Idents(mlungh) <- "CellTypes"
+
+DimPlot(mlungh, label = T)
+# Renaming genes seems to have minimally impacted clustering
+saveRDS(mlungh, "mouse_as_human/mlungh_filtered.RDS")
+mlungh <- readRDS("mouse_as_human/mlungh_filtered.RDS")
 ```
 
 ## Now we can look at different PRRs across tissues and organisms
@@ -1024,7 +999,8 @@ CLRs <- c("Ly75",    # DEC205/CLEC13b/CD205
              "Clec4a3",
              "Cd207",   # Langerin
              "Clec10a") # MGL)
-Clecs <- all_genes[grepl("Clec", all_genes$`rownames(mlung.combined)`),] #get all CLEC Genes
+Clecs <- all_genes[grepl("Clec", all_genes$`rownames(mlung.combined)`),]#get all CLEC Genes
+#Clecs <- all_genes[grepl("CLEC", all_genes$`rownames(mlung.combined)`),]
 Nods <- c("Nod1",
           "Nod2",
           "Nlrc3", # Nod3
@@ -1066,11 +1042,37 @@ Orphans <- c("Fpr1",# senses formylmethionine on pathogens
             "P2ry2",# senses ATP
             "Gpr132",# senses linoleic acid, maybe lysophosphatidyl choline?
             "P2rx7") # purinergic receptor
-PRRs <- c(TLRs, CLRs, Clecs, Nods, IPAFs, RLRs, Orphans)
+scav <- c("MARCO",
+          "CD36",
+          "OLR1", #SR-E1
+          "SCARF1",
+          "SRCR") # CD5
+CR3 <- c("ITGB2", #CD18
+         "ITGAM") #CD11b
+PRRs <- c(TLRs, CLRs, Clecs, Nods, IPAFs, RLRs, Orphans, scav, CR3)
 PRRs <- PRRs[!duplicated(PRRs)] # remove any extra CLRs
 
-ggsave("M_lung_PRRs.pdf",
+# for human
+PRRs <- toupper(PRRs)
+PRRs <- base::intersect(PRRs, all_genes$`rownames(mlung.combined)`)
+
+ggsave("mouse/outs/mlung_PRRs.pdf",
   plot = DotPlot(mlung.combined, features = PRRs),
+  width = 50,
+  height = 10,
+  device = "pdf",
+  limitsize = F)
+
+
+ggsave("human/outs/hlung_PRRs.pdf",
+  plot = DotPlot(hlung.combined, features = PRRs),
+  width = 50,
+  height = 10,
+  device = "pdf",
+  limitsize = F)
+
+ggsave("merged_orgs/outs/lung_PRRs.pdf",
+  plot = DotPlot(lungs, features = PRRs, group.by = "organism"),
   width = 50,
   height = 10,
   device = "pdf",
@@ -1082,6 +1084,16 @@ ggsave("M_lung_dimplot.pdf",
   height = 20,
   device = "pdf",
   limitsize = F)
+
+ggsave("mouse/outs/mlung_PRR_Heatmap.pdf",
+       plot = DoHeatmap(subset(mlung.combined, 
+                               downsample = 1000), 
+                        features = PRRs, 
+                        size = 3),
+       width = 50,
+       height = 10,
+       device = "pdf",
+       limitsize = F)
 
 ggsave("M_lung_ridgeplot.pdf",
   plot =RidgePlot(mlung.combined, features = PRRs),
@@ -1116,10 +1128,10 @@ DimPlot(h_cca, label = T)
 
 ```
 
-RPCA without the stripp samples seems to have best integrated the cells across datasets. Stripp is likely an outlier due to different sample prep and enrichment for basal cells. A few exceptions are: cluster 1 is specific to Okuda (the unidentified cells from their manuscript), and and cluster 10 is the nasal goblet cells that are only found in the Teich nasal data. Moving forward, we will use the h_rpca_ns data for the human lung + nose. This is congruent with the (likely nasal goblet cells) murine approach, which also uses rPCA.
+RPCA without the stripp samples seems to have best integrated the cells across datasets. Stripp is likely an outlier due to different sample prep and enrichment for basal cells. A few exceptions are: cluster 1 is specific to Okuda (the unidentified cells from their manuscript), and and cluster 10 is the nasal goblet cells that are only found in the Teich nasal data. I ultimately used RPCA, excluded Stripp, and also added the relatively new sc/sn data from the Teich spatial lung paper.
 
 As a note, when performing the clustering on the High-throughput computing system, be sure to use a lot of RAM and only 1-2 CPUs. Increasing CPU count balloons the amount of RAM requested by R.
 
-To make the mlung object with human genes, I tried renaming the genes in each object, then merging, clustering and finding markers. This made cell type identification really difficult. Next, I tried ripping the RNA 'counts' from the merged mlung.combined object, renaming those genes, rebuilding the Seurat object, clustering, and finding markers, but this led to 46 clusters, with no overlap between dataset authors. Then I tried
+To make the mlung object with human genes, I tried renaming the genes in each object, then merging, clustering and finding markers. This made cell type identification really difficult. Next, I tried ripping the RNA 'counts' from the merged mlung.combined object, renaming those genes, rebuilding the Seurat object, clustering, and finding markers, but this led to 46 clusters, with no overlap between dataset authors. Then I tried each of the other assays, but ultimately found that I needed to rip each assay individually and rename the genes, followed by adding back each assay individually.
 
 **In the future, we can also try MultiMAP, which will need to be run on the linux CHTC platform.**
