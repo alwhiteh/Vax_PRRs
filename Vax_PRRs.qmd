@@ -28,6 +28,15 @@ library(dplyr)
 library(purrr)
 library(anndata)
 library(tidyverse)
+
+# for Seurat 5 
+library(Seurat)
+library(SeuratWrappers)
+library(EnsDb.Hsapiens.v86)
+library(Azimuth)
+library(BPCells)
+options(future.globals.maxSize = 1e9)
+options(Seurat.object.assay.version = "v5")
 ```
 
 # We need to map the mouse genes to human orthologs in order to be able to combine the datasets. This requires changing the feature names prior to generating the Seurat Object. We will then generate mouse, human, and mouse as human objects.
@@ -1134,4 +1143,195 @@ As a note, when performing the clustering on the High-throughput computing syste
 
 To make the mlung object with human genes, I tried renaming the genes in each object, then merging, clustering and finding markers. This made cell type identification really difficult. Next, I tried ripping the RNA 'counts' from the merged mlung.combined object, renaming those genes, rebuilding the Seurat object, clustering, and finding markers, but this led to 46 clusters, with no overlap between dataset authors. Then I tried each of the other assays, but ultimately found that I needed to rip each assay individually and rename the genes, followed by adding back each assay individually.
 
-**In the future, we can also try MultiMAP, which will need to be run on the linux CHTC platform.**
+**In the future, we can also try MultiMAP, which will need to be run on the linux CHTC platform. EDIT: first we will try the Seurat V5 implementation of RCPA, CCA, and SCVI for integration with less memory utilization via BPCells**
+
+Note: the implementation of Azimuth makes mapping cell type references onto other data easier:
+
+https://azimuth.hubmapconsortium.org/references/
+
+```{r, results = F}
+#| echo: false
+hlung <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/hlung_anno.RDS")
+
+#Delete the unused assays 
+hlung[["CFauc"]] <- NULL
+hlung[["GOBPauc"]] <- NULL
+hlung[["integrated"]] <- NULL
+
+# To use BPCells and Seurat V5 functionality, we need to do a few things first:
+# 1. Convert each assay (RNA, integrated, SCT) to a V5 format
+# 2. and then generate on-disk matrices for each assay 
+# 3. and then link the matrices to the Seurat object and re-save
+
+# Step 1. Convert all assays to V5
+#You can add change assays with the following code
+hlung[["RNA"]] <- as(object = hlung[["RNA"]], Class = "Assay5")
+hlung[["SCT"]] <- as(object = hlung[["SCT"]], Class = "Assay5")
+
+# Step 2. Write each assay to disk for BPCells
+write_matrix_dir(mat = hlung[["RNA"]]$counts, dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/bpcells/RNA")
+write_matrix_dir(mat = hlung[["SCT"]]$counts, dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/bpcells/SCT")
+
+# Read in the matrix as a path and link on-disk counts to Seurat Obejct and re-save
+counts.mat <- open_matrix_dir(dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/bpcells/RNA")
+hlung[["RNA"]]$counts <- counts.mat
+counts.mat <- open_matrix_dir(dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/bpcells/SCT")
+hlung[["SCT"]]$counts <- counts.mat
+
+# Before we save, let's get rid of extra metadata
+index <- c(6,10:51,57:72,74)
+names <- list()
+for(i in index){
+  names[[i]] <- colnames(hlung[[i]])
+}
+names
+for(f in names){
+  hlung[[paste(f)]] <- NULL
+}
+
+saveRDS(
+  object = hlung,
+  file = "hlung_v5.Rds",
+  destdir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/bpcells"
+)
+
+class(hlung[["RNA"]])
+class(hlung[["SCT"]])
+hlung
+
+test <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/human/bpcells/hlung_v5.Rds")
+
+test
+# An object of class Seurat
+# 89055 features across 307482 samples within 2 assays
+# Active assay: SCT (37259 features, 0 variable features)
+# 3 layers present: data, counts, scale.data
+# 1 other assay present: RNA
+# 2 dimensional reductions calculated: pca, umap
+hlung <- test
+
+# Repeat for mouse object
+mlung <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/mlung.combined.filtered.RDS")
+
+mlung
+# An object of class Seurat 
+# 80764 features across 185136 samples within 3 assays 
+# Active assay: SCT (31269 features, 0 variable features)
+#  3 layers present: counts, data, scale.data
+#  2 other assays present: RNA, integrated
+#  2 dimensional reductions calculated: pca, umap
+mlung[["integrated"]] <- NULL
+mlung[["RNA"]] <- as(object = mlung[["RNA"]], Class = "Assay5")
+mlung[["SCT"]] <- as(object = mlung[["SCT"]], Class = "Assay5")
+write_matrix_dir(mat = mlung[["RNA"]]$counts, dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/bpcells/RNA")
+write_matrix_dir(mat = mlung[["SCT"]]$counts, dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/bpcells/SCT")
+counts.mat <- open_matrix_dir(dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/bpcells/RNA")
+mlung[["RNA"]]$counts <- counts.mat
+counts.mat <- open_matrix_dir(dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/bpcells/SCT")
+mlung[["SCT"]]$counts <- counts.mat
+saveRDS(
+  object = mlung,
+  file = "mlung_v5.Rds",
+  destdir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/bpcells"
+)
+
+
+mlung <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse/bpcells/mlung_v5.RDS")
+
+mlung
+
+# Now do this for the humanized mouse object
+mlungh <- readRDS("/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/mlungh_filtered.RDS")
+mlungh
+mlungh[["RNA"]] <- as(object = mlungh[["RNA"]], Class = "Assay5")
+mlungh[["SCT"]] <- as(object = mlungh[["SCT"]], Class = "Assay5")
+write_matrix_dir(mat = mlungh[["RNA"]]$counts, dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/bpcells/RNA")
+write_matrix_dir(mat = mlungh[["SCT"]]$counts, dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/bpcells/SCT")
+counts.mat <- open_matrix_dir(dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/bpcells/RNA")
+mlungh[["RNA"]]$counts <- counts.mat
+counts.mat <- open_matrix_dir(dir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/bpcells/SCT")
+mlungh[["SCT"]]$counts <- counts.mat
+saveRDS(
+  object = mlungh,
+  file = "mlungh_v5.Rds",
+  destdir = "/Users/alexwhitehead/Documents/Postdoc/Bl_Eng2_Priming/Vax_PRRs/mouse_as_human/bpcells"
+)
+
+
+
+
+
+```
+
+```{r Try mapping mouse onto human locally}
+DefaultAssay(mlungh) <- "SCT"
+DefaultAssay(hlung) <- "SCT"
+
+mlungh <- NormalizeData(mlungh, verbose = FALSE)
+hlung <- NormalizeData(hlung, verbose = FALSE)
+
+mlungh$organism <- "mouse"
+hlung$organism <- "human"
+
+lungs <- merge(mlungh,hlung)
+lungs <- NormalizeData(lungs)
+lungs <- FindVariableFeatures(lungs)
+lungs <- ScaleData(lungs)
+to_integrate <- Reduce(intersect, list(rownames(hlung), rownames(mlungh)))
+lungs <- RunPCA(lungs) # took 3.5ish hours
+lungs <- FindNeighbors(lungs, dims = 1:30, reduction = "pca")
+lungs <- FindClusters(lungs, resolution = 2, cluster.name = "unintegrated_clusters")
+lungs <- RunUMAP(lungs, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
+DimPlot(lungs, reduction = "umap.unintegrated", group.by = "organism")
+
+
+# Let's try this the traditional way
+DefaultAssay(mlungh) <- "SCT"
+DefaultAssay(hlung) <- "SCT"
+lung_list <- list(mlungh, hlung)
+features <- SelectIntegrationFeatures(object.list = lung_list)
+
+lung_list <- PrepSCTIntegration(object.list = lung_list, 
+                                  anchor.features = features)
+lung_list <- lapply(X = lung_list, FUN = function(x) {
+  x <- RunPCA(x, features = features, verbose = FALSE)
+})
+lung.anchors <- FindIntegrationAnchors(object.list = lung_list, 
+                                        anchor.features = features, 
+                                        reduction = "cca", 
+                                        dims = 1:50, 
+                                        k.anchor = 20, 
+                                        normalization.method = "SCT")
+to_integrate <- Reduce(c, lapply(lung.anchors@object.list, rownames))
+lung.combined <- IntegrateData(anchorset = lung.anchors, 
+                                features.to.integrate = to_integrate,
+                               normalization.method = "SCT",
+                               dims = 1:50)
+DefaultAssay(lung.combined) <- "SCT"
+all_genes <- rownames(lung.combined)
+DefaultAssay(lung.combined) <- "integrated"
+lung.combined <- ScaleData(lung.combined,
+                           features = all_genes,
+                           verbose = FALSE)
+lung.combined <- RunPCA(lung.combined, 
+                         features = all_genes, 
+                         npcs = 30)
+lung.combined <- RunUMAP(lung.combined, 
+                          reduction = "pca", 
+                          dims = 1:30)
+lung.combined <- FindNeighbors(lung.combined, 
+                                reduction = "pca", 
+                                dims = 1:30)
+lung.combined <- FindClusters(lung.combined, 
+                               resolution = 0.3)
+
+
+# This is the code for the V5 single line integration - didn't work for this
+lungs <- IntegrateLayers(
+  object = lungs, method = CCAIntegration,
+  orig.reduction = "pca", new.reduction = "integrated.cca",
+  group.by = "organism", verbose = FALSE, features = to_integrate, assay = "SCT")
+#features <- unique(rownames(hlung), rownames(mlungh))
+
+
+```
